@@ -925,6 +925,8 @@ class BattleScene(Scene):
                 label = {"hex": "HEX", "kiburst": "KI BURST", "counter": "COUNTER"}[k]
                 self.float_text(side, f"{label} -{a}", (255, 170, 90) if k != "hex" else (170, 120, 220),
                                 26 if k == "kiburst" else 20)
+            elif k == "ambush":
+                self.float_text(side, f"AMBUSH -{a}", (255, 230, 120), 26)
             elif k in ("grow", "steal", "cleanse"):
                 col = {"grow": (255, 120, 90), "steal": (150, 180, 255), "cleanse": (200, 255, 200)}[k]
                 self.float_text(side, e["text"], col, 18)

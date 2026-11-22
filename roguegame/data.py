@@ -195,9 +195,10 @@ CHARACTERS = {
         start=["katana", "do_armor", "onigiri"],
     ),
     "ninja": dict(
-        name="Ninja", color=(90, 110, 200), glyph="N", hp=60, portrait="ninja",
+        name="Ninja", color=(90, 110, 200), glyph="N", hp=64, portrait="ninja",
         style="Speed / Evasion / Many strikes",
-        passive="Shinobi: 20% chance to evade enemy hits. Your weapons trigger 15% faster.",
+        passive="Shinobi: 20% chance to evade enemy hits; weapons trigger 15% faster. Every evade or "
+            "dodge primes an Ambush: +2 Block, and your next weapon hit deals double damage.",
         lore="A shadow of the Iga hills, sent to end the Demon Shogun before he wakes.",
         start=["ninjato", "shuriken", "smoke_bomb"],
     ),
@@ -340,7 +341,7 @@ def describe_stats(st):
             extra = (" + Burn" if sm.get("burn") else "") + (" + Curse" if sm.get("curse") else "")
             out.append(f"  Summon a {sm['name']} ({sm['dmg'][0]}-{sm['dmg'][1]} dmg every {sm['cd']:.1f}s{extra})")
         if st.get("curse"):
-            out.append(f"  Curse {st['curse']} (enemy deals 5% less damage per Curse)")
+            out.append(f"  Curse {st['curse']} (enemy deals 5% less damage per Curse, max 50%)")
         if st.get("hex"):
             out.append(f"  Hex: deal {st['hex']} damage per Curse on the enemy")
         if st.get("ki"):
@@ -616,7 +617,7 @@ _load_balance_overrides()
 #   aura keys: summon_dmg (+dmg to adjacent summon items), ki (+Ki to adjacent Ki items)
 
 # ---------------------------------------------------------------- ONMYOJI: shikigami & curses
-item("paper_shikigami", "Paper Shikigami", S1, "common", ["summon", "charm"], cls="onmyoji", cd=3.0,
+item("paper_shikigami", "Paper Shikigami", S1, "common", ["summon", "charm"], cls="onmyoji", cd=3.5,
      summon=dict(name="Paper Crane", dmg=(3, 4), cd=1.6), price=4)
 item("binding_ofuda", "Ofuda of Binding", S1, "common", ["curse", "charm"], cls="onmyoji", cd=3.0, curse=2)
 item("spirit_brush", "Spirit Brush", V2, "rare", ["tool"], cls="onmyoji",
@@ -699,8 +700,8 @@ item("mirror_yata", "Yata no Kagami", S1, "legendary", ["charm", "armor"], s_blo
 CHARACTERS["onmyoji"] = dict(
     name="Onmyōji", color=(110, 200, 220), glyph="O", hp=60, portrait="onmyoji",
     style="Summons / Curses / Slow build",
-    passive="Shikigami Pact: start every battle with a Paper Crane shikigami and Curse 2 on the enemy. "
-            "Your shikigami attack 40% faster.",
+    passive="Shikigami Pact: start every battle with a Paper Crane shikigami and Curse 1 on the enemy. "
+            "Your shikigami attack 25% faster.",
     lore="A court diviner who reads the stars and binds spirits to paper. The Shogun's demons are a debt to collect.",
     start=["paper_shikigami", "binding_ofuda", "onigiri"],
 )

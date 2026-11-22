@@ -113,7 +113,15 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def save_balance(bal):
+    with open(os.path.join(ASSETS, "balance.json"), "w", encoding="utf-8") as f:
+        json.dump(bal, f, indent=2)
+
+
 def autotune(bal, args, pool, log):
+    """Measure -> adjust, up to args.rounds times. Saves balance.json after every round (a checkpoint you
+    can stop at). Returns (bal, last_results, balanced) - last_results match bal when balanced is True."""
+    res = None
     for rnd in range(args.rounds):
         res = measure(args.eval, bal, pool)
         st = {c: stats(r) for c, (r, _) in res.items()}
@@ -145,8 +153,10 @@ def autotune(bal, args, pool, log):
                 changed = True
         if not changed:
             log("  balanced: every target is inside its band.")
-            break
-    return bal
+            return bal, res, True
+        save_balance(bal)
+        log("    checkpoint saved: assets/balance.json")
+    return bal, res, False
 
 
 def write_report(res, bal, path_md, path_json, train_info):
@@ -197,6 +207,8 @@ def main():
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--skip-train", action="store_true",
                     help="reuse the agents saved in assets/ai instead of training from scratch (faster re-tunes)")
+    ap.add_argument("--checkpoint", action="store_true",
+                    help="stop at the first balanced point: skip retraining and report that round's win rates")
     args = ap.parse_args()
 
     def log(msg):
@@ -213,16 +225,22 @@ def main():
             log(f"[1/4] Training {len(CLASSES)} agents x {args.episodes} runs...")
             pool.map(_train, [(c, args.episodes, bal, False) for c in CLASSES])
             log(f"      done in {time.time() - t0:.0f}s")
+        res = None
         if args.autotune:
             log("[2/4] Tuning difficulty...")
-            bal = autotune(bal, args, pool, log)
-            log("[3/4] Retraining agents on the tuned difficulty...")
-            pool.map(_train, [(c, args.episodes // 2, bal, True) for c in CLASSES])
-        log("[4/4] Final measurement...")
-        res = measure(args.eval, bal, pool)
+            bal, last, balanced = autotune(bal, args, pool, log)
+            if args.checkpoint:
+                log("[3/4] Checkpoint mode: skipping retraining")
+                if balanced:
+                    res = last          # those measurements already match the saved settings
+            else:
+                log("[3/4] Retraining agents on the tuned difficulty...")
+                pool.map(_train, [(c, args.episodes // 2, bal, True) for c in CLASSES])
+        if res is None:
+            log("[4/4] Final measurement...")
+            res = measure(args.eval, bal, pool)
     log("      " + summary_line(res))
-    with open(os.path.join(ASSETS, "balance.json"), "w", encoding="utf-8") as f:
-        json.dump(bal, f, indent=2)
+    save_balance(bal)
     write_report(res, bal, os.path.join(ASSETS, "balance_report.md"), os.path.join(ASSETS, "balance_report.json"),
                  f"{args.episodes} training runs per class, {args.eval} test runs per class, "
                  f"{time.time() - t0:.0f}s total.")

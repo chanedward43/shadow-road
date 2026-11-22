@@ -8,10 +8,10 @@
     "3": 1.031
   },
   "class_hp": {
-    "samurai": 1.2,
-    "ninja": 2.635,
+    "samurai": 1.082,
+    "ninja": 1.158,
     "kunoichi": 0.77,
-    "onmyoji": 0.544,
+    "onmyoji": 1.0,
     "sohei": 1.189
   }
 }

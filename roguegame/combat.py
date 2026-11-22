@@ -16,7 +16,7 @@ BASE_CRIT = 0.05
 MAX_EVADE = 0.6
 STUN_IMMUNITY = 2.0    # after a stun ends, the target can't be stunned again for this long
 CURSE_PER_STACK = 0.05 # each Curse stack: enemy deals 5% less damage
-CURSE_CAP = 0.6
+CURSE_CAP = 0.5
 SUMMON_CAP = 5
 KI_MAX = 12
 
@@ -148,6 +148,8 @@ class Fighter:
         self.ki_burst_bonus = 0
         self.crit_block = 0
         self.crit_poison = 0
+        self.ambush_on_evade = False # Ninja: evading primes an Ambush
+        self.ambush = False          # next weapon hit deals double damage
         self.items = []
         self.activations = 0
         self.poison_t = 0.0
@@ -184,16 +186,17 @@ def player_fighter(run):
     elif run.char_id == "ninja":
         f.evade += 0.20
         f.armor_pierce = 0
+        f.ambush_on_evade = True
     elif run.char_id == "kunoichi":
         f.crit += 0.05
         f.poison_on_crit = 2
         f.poison_interval = 0.8
     elif run.char_id == "onmyoji":
-        f.summon_speed = 1.4
-        f.start_curse += 2
+        f.summon_speed = 1.25
+        f.start_curse += 1
         bonus = int(mods.get("summon_dmg", 0))
         for _ in range(1 + int(mods.get("extra_summon", 0))):
-            f.summons.append(new_summon(dict(name="Paper Crane", dmg=(3 + bonus, 4 + bonus), cd=1.6,
+            f.summons.append(new_summon(dict(name="Paper Crane", dmg=(2 + bonus, 3 + bonus), cd=1.6,
                                              curse=mods.get("summon_curse", 0))))
     elif run.char_id == "sohei":
         f.ki_max = KI_MAX + int(mods.get("ki_max", 0))
@@ -299,10 +302,10 @@ class Battle:
         st = ci.st
         if foe.dodge > 0:
             foe.dodge -= 1
-            self._emit("evade", 1 - side)
+            self._evaded(1 - side)
             return False
         if self.rng.random() < min(MAX_EVADE, foe.evade):
-            self._emit("evade", 1 - side)
+            self._evaded(1 - side)
             return False
         dmg = self.rng.randint(*st["dmg"]) + me.resolve + ci.bonus
         if ci.triggers == 1 and me.first_strike > 1:
@@ -314,6 +317,10 @@ class Battle:
                 foe.poison += me.poison_on_crit + me.crit_poison
             if me.crit_block:
                 me.block += me.crit_block
+        if me.ambush:
+            me.ambush = False
+            dmg *= 2
+            self._emit("ambush", 1 - side, dmg, text="AMBUSH!")
         dmg = self._cursed(me, dmg)
         dealt = self._damage(1 - side, dmg, "hit", crit, pierce_amt=me.armor_pierce)
         self._on_hit_taken(1 - side)
@@ -328,6 +335,14 @@ class Battle:
         if attacker.curse:
             dmg = int(round(dmg * (1 - min(CURSE_CAP, attacker.curse * CURSE_PER_STACK))))
         return max(0, dmg)
+
+    def _evaded(self, side):
+        """`side` just evaded an attack. A Ninja turns that into an Ambush (+2 Block)."""
+        f = self.f[side]
+        self._emit("evade", side)
+        if f.ambush_on_evade:
+            f.ambush = True
+            f.block += 2
 
     def _on_hit_taken(self, side):
         """Sohei: every landed enemy hit builds Ki."""
@@ -346,10 +361,10 @@ class Battle:
             sm["flash"] = 0.25
             if foe.dodge > 0:
                 foe.dodge -= 1
-                self._emit("evade", 1 - side)
+                self._evaded(1 - side)
                 continue
             if self.rng.random() < min(MAX_EVADE, foe.evade):
-                self._emit("evade", 1 - side)
+                self._evaded(1 - side)
                 continue
             dmg = self._cursed(me, self.rng.randint(*sm["dmg"]))
             self._damage(1 - side, dmg, "summon")

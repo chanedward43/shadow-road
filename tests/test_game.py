@@ -166,8 +166,10 @@ class TestMechanics(unittest.TestCase):
     def test_curse_reduces_damage_and_hex_scales(self):
         r = self.kit("onmyoji", ["onmyo_compass", "hex_scroll"])
         b = make_battle(r, "kurogane", 1.0, seed=0)
-        self.assertEqual(b.f[1].curse, 5)                 # 3 from the Compass + 2 from Shikigami Pact
-        self.assertEqual(b._cursed(b.f[1], 100), 75)      # 5 stacks x 5% = 25% less damage
+        self.assertEqual(b.f[1].curse, 4)                 # 3 from the Compass + 1 from Shikigami Pact
+        self.assertEqual(b._cursed(b.f[1], 100), 80)      # 4 stacks x 5% = 20% less damage
+        b.f[1].curse = 30
+        self.assertEqual(b._cursed(b.f[1], 100), 50)      # capped at 50%
         b.run_to_end()
         self.assertGreater(self.kinds(b).get("hex", 0), 0)
 
@@ -176,6 +178,17 @@ class TestMechanics(unittest.TestCase):
         k = self.kinds(b)
         self.assertGreater(k.get("counter", 0), 0)
         self.assertGreater(k.get("kiburst", 0), 0)
+
+    def test_ninja_ambush(self):
+        b = make_battle(self.kit("ninja", ["smoke_bomb"]), "kappa", 1.0, seed=0)
+        ninja = b.f[0]
+        ninja.dodge = 1
+        block = ninja.block
+        b._strike(1, b.f[1].items[0])                  # kappa attacks -> dodged
+        self.assertTrue(ninja.ambush)
+        self.assertEqual(ninja.block, block + 2)
+        b.run_to_end()
+        self.assertGreater(self.kinds(b).get("ambush", 0), 0)
 
     def test_per_tag_scaling(self):
         r = self.kit("samurai", ["daisho", "wakizashi", "tanto"])

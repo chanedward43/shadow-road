@@ -22,6 +22,23 @@ BLUE = (90, 150, 230)
 POISON = (130, 200, 70)
 BURN = (240, 140, 50)
 
+_NORMAL = dict(RED=RED, GREEN=GREEN, POISON=POISON, BURN=BURN, BLUE=BLUE)
+# colour-blind friendly (Okabe-Ito based): heal is sky blue, poison is purple, damage vermillion
+_COLORBLIND = dict(RED=(213, 94, 0), GREEN=(86, 180, 233), POISON=(204, 121, 167), BURN=(240, 190, 40),
+                   BLUE=(0, 114, 178))
+
+
+def apply_palette(colorblind):
+    """Swap the status colours (and the keyword colours) for the colour-blind palette, or back."""
+    from . import keywords
+    pal = _COLORBLIND if colorblind else _NORMAL
+    globals().update(pal)
+    swaps = {"poison": "POISON", "heal": "GREEN", "regen": "GREEN", "burn": "BURN", "block": "BLUE"}
+    for k, name in swaps.items():
+        n, _, desc = keywords.KEYWORDS[k]
+        keywords.KEYWORDS[k] = (n, pal[name] if colorblind else keywords.BASE_COLOURS[k], desc)
+
+
 RARITY_COL = {"common": (160, 160, 165), "rare": (80, 145, 235),
               "epic": (180, 95, 230), "legendary": (245, 165, 40)}
 TAG_COL = {"weapon": (58, 44, 52), "armor": (34, 50, 80), "food": (92, 64, 38),
@@ -176,11 +193,16 @@ class Button:
         if not self.enabled:
             col = (35, 33, 42)
         panel(surf, self.rect, col, GOLD if hover else LINE)
-        text(surf, self.label, self.rect.center, self.size, TEXT if self.enabled else DIM, True, center=True)
+        size = self.size                       # shrink the label until it fits the button
+        while size > 11 and font(size, True).size(str(self.label))[0] > self.rect.width - 16:
+            size -= 1
+        text(surf, self.label, self.rect.center, size, TEXT if self.enabled else DIM, True, center=True)
 
     def handle(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.enabled \
                 and self.rect.collidepoint(ev.pos):
+            from . import audio
+            audio.play("click", 0.6)
             self.cb()
             return True
         return False
@@ -290,6 +312,9 @@ def draw_item(surf, iid, shape, ox, oy, cell, alpha=230, highlight=None, level=1
     gsize = min(bw, bh) * 0.62
     _glyph(layer, GLYPH.get(tag, tag), (bw / 2, bh / 2), gsize, LINE_COL.get(tag, TEXT))
     surf.blit(layer, (ox, oy))
+    if cell < 50 and bw <= cell:            # too small for a readable name: the tooltip has it
+        draw_level(surf, level, ox, oy, cell)
+        return
     # name, with a dark shadow so it reads on top of the line art
     cx = ox + bw / 2
     cy = oy + bh / 2

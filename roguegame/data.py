@@ -320,7 +320,7 @@ def describe_stats(st):
     """Human readable lines for an item's (effective) stats."""
     out = []
     if st.get("cd"):
-        out.append(f"Every {st['cd']:.1f}s:")
+        out.append(trigger_text(st) if st.get("trigger") else f"Every {st['cd']:.1f}s:")
         if st.get("dmg"):
             hits = f" x{st['hits']}" if st.get("hits", 1) > 1 else ""
             out.append(f"  Deal {st['dmg'][0]}-{st['dmg'][1]} damage{hits}")
@@ -396,6 +396,19 @@ def describe_stats(st):
         starts.append(f"+{st['s_stamina_regen']:g} Stamina per second")
     if starts:
         out.append("Battle start: " + ", ".join(starts))
+    if st.get("alone_dmg"):
+        out.append(f"+{st['alone_dmg']} damage if nothing is adjacent")
+    money = []
+    if st.get("gold_per_win"):
+        money.append(f"+{st['gold_per_win']} ryō after every win")
+    if st.get("interest"):
+        money.append(f"+1 ryō per {100 // st['interest']} you hold after every win (max 5)")
+    if st.get("gold_per_boss"):
+        money.append(f"+{st['gold_per_boss']} ryō after every boss")
+    if st.get("discount"):
+        money.append(f"Shop prices -{int(st['discount'] * 100)}%")
+    if money:
+        out.append("In your kit: " + "; ".join(money))
     aura = st.get("aura")
     if aura:
         who = "items" if not aura.get("tags") else "/".join(aura["tags"]) + " items"
@@ -440,7 +453,8 @@ def level_stats(st, level):
         out["dmg"] = (round(out["dmg"][0] * mult), round(out["dmg"][1] * mult))
     for k in ("block", "heal", "poison", "burn", "regen", "s_block", "s_hp", "s_regen", "s_thorns", "dodge",
               "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "s_crit_block", "s_crit_poison",
-              "grow", "steal_block", "cleanse", "stamina_gain", "s_stamina"):
+              "grow", "steal_block", "cleanse", "stamina_gain", "s_stamina", "alone_dmg",
+              "gold_per_win", "gold_per_boss"):
         if out.get(k):
             out[k] = max(out[k] + 1, round(out[k] * mult))
     for k in ("s_crit", "s_evade", "crit", "lifesteal"):
@@ -872,7 +886,7 @@ SIGNATURE_DROP_CHANCE = {"mob": 0.3, "elite": 0.5, "boss": 0.7}
 
 def _enemy_usable(d):
     """Items an enemy can actually use (no grid: pure auras do nothing; no Ki: Ki items do nothing)."""
-    if d["enemy"] or d.get("loot") or d.get("ki") or d.get("ki_burst"):
+    if d["enemy"] or d.get("loot") or d.get("ki") or d.get("ki_burst") or d.get("trigger"):
         return False
     if d.get("cd"):
         return True
@@ -1145,3 +1159,80 @@ ENDLESS_PASSIVES = {
     "samurai": "Way of the Blade: weapons deal +3 damage on stage 4, +1 more every stage after.",
     "sohei": "Unshakable: counter-attacks +3 damage and +6 starting Block per endless stage.",
 }
+
+
+def trigger_text(st):
+    t, n = st.get("trigger"), st.get("n", 0)
+    return {"adjacent_crit": "When an adjacent item crits:",
+            "block_count": f"Every {n} times you gain Block:",
+            "hits_taken": f"Every {n} hits you take:",
+            "heal_count": f"Every {n} times you heal:"}.get(t, "When triggered:")
+
+
+# ================================================================ v8: CONDITIONAL ITEMS, ECONOMY, CONSUMABLES, ASCENSION
+# Conditional items react to what happens in battle instead of a timer:
+#   trigger="adjacent_crit"          - activates whenever an ADJACENT item lands a crit
+#   trigger="block_count", n=N       - activates every N times you gain Block
+#   trigger="hits_taken", n=N        - activates every N enemy hits that land on you
+#   trigger="heal_count", n=N        - activates every N times you heal
+#   alone_dmg=N                      - +N damage if nothing is adjacent to it
+#   per_tag=(tag, N)                 - +N damage for each OTHER item with that tag in your kit
+TRIGGER_CD = 99.0          # triggered items never fire on a timer within a fight
+
+
+def titem(iid, name, shape, rarity, tags, trigger, n=0, **stats):
+    item(iid, name, shape, rarity, tags, cd=TRIGGER_CD, trigger=trigger, n=n, stamina_cost=0, **stats)
+
+
+item("glutton_hashi", "Glutton's Hashi", V2, "common", ["weapon"], cd=1.6, dmg=(1, 2), per_tag=("food", 2))
+titem("echo_blade", "Echo Blade", V2, "rare", ["weapon"], "adjacent_crit", dmg=(4, 6))
+titem("tetsubo", "Patient Tetsubō", V3, "epic", ["weapon"], "block_count", n=5, dmg=(18, 24), price=12)
+titem("wara_doll", "Wara Ningyō Doll", S1, "rare", ["charm", "curse"], "hits_taken", n=6, curse=2, hex=2)
+titem("inro", "Inrō Medicine Case", S1, "rare", ["tool"], "heal_count", n=4, block=15)
+titem("spite_mask", "Mask of Spite", S1, "epic", ["armor"], "hits_taken", n=4, block=6, dmg=(5, 7), price=11)
+item("lone_tanto", "Lone Wolf Tantō", V2, "rare", ["weapon"], cd=1.4, dmg=(3, 5), alone_dmg=5)
+titem("kiai_echo", "Ringing Tsuba", S1, "epic", ["charm"], "adjacent_crit", block=4, heal=2, price=11)
+
+# Economy: they pay out after battles you win (only while they're in your KIT, not your chest).
+#   gold_per_win=N, interest=N% of your ryō (max 5 per win), gold_per_boss=N, discount=fraction off shop prices
+item("maneki_neko", "Maneki-neko", S1, "rare", ["charm"], gold_per_win=2, price=8)
+item("coin_purse", "Silk Coin Purse", S1, "common", ["tool"], interest=10, price=5)
+item("soroban", "Merchant's Soroban", H2, "rare", ["tool"], discount=0.15, price=8)
+item("treasure_map", "Pirate's Treasure Map", S1, "rare", ["scroll"], gold_per_boss=15, price=7)
+
+# Consumables: bought in shops, used up in your NEXT battle (win or lose). Max 3 at a time.
+MAX_CONSUMABLES = 3
+CONSUMABLES = {
+    "tonic": dict(name="Strength Tonic", price=4, desc="Weapons deal +3 damage next battle.", weapon_dmg=3,
+                  art="tonic"),
+    "iron_elixir": dict(name="Iron Skin Elixir", price=4, desc="Start next battle with 30 Block.", block=30,
+                        art="iron_elixir"),
+    "smoke_pellets": dict(name="Smoke Pellets", price=4, desc="Start next battle with 2 Dodge.", dodge=2,
+                          art="smoke_pellets"),
+    "explosive_tag": dict(name="Explosive Tag", price=5, desc="The enemy starts next battle with 8 Burn.",
+                          enemy_burn=8, art="explosive_tag"),
+    "herbal_salve": dict(name="Herbal Salve", price=4, desc="Regen 3 for the whole next battle.", regen=3,
+                         art="herbal_salve"),
+    "wind_charm": dict(name="Swift Wind Charm", price=5, desc="All your items act 15% faster next battle.",
+                       speed=0.15, art="wind_charm"),
+    "antidote": dict(name="Antidote", price=3, desc="Immune to Poison next battle.", poison_immune=True,
+                     art="antidote"),
+    "omikuji": dict(name="Fortune Omikuji", price=3, desc="Win your next battle: +10 ryō.", win_gold=10,
+                    art="omikuji"),
+}
+
+# Ascension: win a story run to unlock the next level for that class. Levels stack.
+ASCENSION = [
+    "",                                                                        # 0: normal
+    "Veteran elites: elites are 15% stronger.",
+    "Greedy merchants: shop prices +20%.",
+    "Warlords: bosses are 15% stronger.",
+    "Weary traveller: start with 10% less max HP.",
+    "Regenerating elites: elites gain 2 Regen.",
+    "Cold onsen: resting heals 20% instead of 30%.",
+    "Hardened mobs: regular enemies are 10% stronger.",
+    "Last stand: bosses gain an extra phase at 25% HP (+25% speed, +20 Block).",
+    "Lean purses: 25% less ryō from battles.",
+    "Red sky: the Blood Moon already rises over stage 3.",
+]
+MAX_ASCENSION = len(ASCENSION) - 1

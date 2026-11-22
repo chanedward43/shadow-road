@@ -36,6 +36,29 @@ python main.py
   map. On the website it is stored in your browser, so it survives game updates (but not clearing
   your browser's site data); on desktop it is in `%APPDATA%\ShadowRoad`.
 - Every new run gets a random seed (from the clock and your mouse position).
+- **Sound & music** (Ninja Adventure pack, CC0): hits, crits, blocks, heals, boss phases, plus music for the
+  title, map, battles, bosses, the Blood Moon and the Arena. Crits and boss transformations shake the screen.
+- **Settings** (title screen): music and sound volume, default battle speed, screen shake, a colour-blind
+  palette (heals blue, poison purple, damage vermillion) and first-time tips.
+- **Achievements** (title screen): 16 achievements plus lifetime stats (kills, nemesis, favourite items).
+- **Ascension**: win a story run to unlock Ascension 1 for that class, then the next level each win, up to
+  A10. Pick it with the < > arrows on the class select. Each level adds one rule on top of the last
+  (stronger elites, pricier shops, stronger bosses, less HP, regenerating elites, weaker onsen, stronger
+  mobs, a boss last-stand phase, less gold, and finally the Blood Moon over stage 3).
+- **Conditional items**: some items trigger on events instead of a timer: when an adjacent item crits
+  (Echo Blade, Ringing Tsuba), every N times you gain Block (Patient Tetsubō), every N hits you take
+  (Wara Doll, Mask of Spite), every N heals (Inrō). The Lone Wolf Tantō hits harder with nothing next to it,
+  and the Glutton's Hashi grows with every Food item.
+- **Economy items** (only while in your kit): Maneki-neko (+ryō per win), Silk Coin Purse (interest),
+  Merchant's Soroban (cheaper shops), Pirate's Treasure Map (+ryō per boss).
+- **Consumables**: merchants also sell 2 consumables (top right of the shop). They are used up in your
+  NEXT battle (hold up to 3, shown under your kit): tonic, iron skin elixir, smoke pellets, explosive tag,
+  herbal salve, swift wind charm, antidote, fortune omikuji.
+- **Story threads**: some choices come back later. Free (or rob) the trapped tanuki in stage 1, save (or rob)
+  the wounded rōnin in stage 2 - an **Omen** node appears on the next stage's map with the payoff.
+- **Risky events**: the Oni's Bargain, the Champion's Grave (a hard fight for a legendary), the Monk of Empty
+  Mind (sell a technique), High-Stakes Dice and the Veiled Merchant.
+- While holding an item, a **Rotate** button appears bottom-right (handy on touch screens).
 
 ## Development
 | Task | Command |
@@ -60,7 +83,7 @@ Samurai/Sōhei get endless passives (they scaled worst in testing). Match Histor
 ## Arena (online ghost PvP)
 **Arena (online)** on the title screen: shop and arrange your kit each round, then fight the
 *ghost* of another player's kit from the same round of the same game version. Win 10 fights to be
-champion; 5 losses and you're out. Your kit is uploaded as a ghost each round so others fight you.
+champion; 5 losses and you're out. Each round is a small random floor, like the adventure map: practice fights and elites (losing one costs nothing - you just get no rewards), shrines, events, a forge, a bounty and a dojo, then a merchant, and the round ends with the ghost duel instead of a boss. Your kit is uploaded as a ghost each round so others fight you.
 When nobody has played a round yet (or you're offline) you face an AI ghost instead.
 
 The website itself stays on GitHub Pages; ghosts and the leaderboard live in a free **Supabase**
@@ -132,4 +155,4 @@ You can also hand-edit `assets/balance.json` (e.g. lower `boss_mult` to make bos
 class's `class_hp`) and just restart the game - no training needed.
 
 ## Credits
-Art: [Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack) by Pixel-Boy and AAA (CC0).
+Art, sound effects and music: [Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack) by Pixel-Boy and AAA (CC0). `python tools/import_audio.py` re-imports the audio (needs ffmpeg).

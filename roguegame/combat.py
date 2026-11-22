@@ -71,6 +71,12 @@ def effective_stats(grid, cls, techniques=()):
                 st["stamina_cost"] = max(0.2, round(weapon_stamina_cost(st) + aura["stamina_cost"], 2))
             if aura.get("speed"):
                 st["speed"] += aura["speed"]
+    for inst in grid.items:                    # who is next to whom (for adjacent_crit / alone_dmg)
+        st = stats[inst.uid]
+        nbrs = grid.neighbors(inst)
+        st["adj"] = [n.uid for n in nbrs]
+        if st.get("alone_dmg") and st.get("dmg") and not nbrs:
+            st["dmg"] = (st["dmg"][0] + st["alone_dmg"], st["dmg"][1] + st["alone_dmg"])
     tag_count = {}
     for inst in grid.items:
         for t in set(inst.data["tags"]):
@@ -102,7 +108,8 @@ def effective_stats(grid, cls, techniques=()):
             st["burn"] += mods["item_burn"]
         if st.get("poison") and mods.get("item_poison"):
             st["poison"] += mods["item_poison"]
-        st["cd"] = round(st["cd"] / st["speed"], 2)
+        if not st.get("trigger"):
+            st["cd"] = round(st["cd"] / st["speed"], 2)
     return stats
 
 
@@ -157,6 +164,9 @@ class Fighter:
         self.ki_burst_bonus = 0
         self.crit_block = 0
         self.crit_poison = 0
+        self.block_gains = 0         # for block_count triggers
+        self.hits_taken = 0          # for hits_taken triggers
+        self.heals = 0               # for heal_count triggers
         self.max_stamina = STAMINA_MAX
         self.stamina = STAMINA_MAX
         self.stamina_regen = STAMINA_REGEN
@@ -283,7 +293,27 @@ def make_battle(run, enemy_id, scale=1.0, seed=0):
     if slow:
         for ci in e.items:
             ci.cd = round(ci.cd * (1 + slow), 2)
-    if run.stage >= BLOOD_MOON_STAGE:          # Blood Moon: every enemy is enraged
+    from .data import CONSUMABLES, enemy_tier
+    asc = getattr(run, "asc", 0)
+    if asc >= 5 and enemy_tier(enemy_id) == "elite":
+        e.regen += 2
+    if asc >= 8 and enemy_tier(enemy_id) == "boss":
+        e.phases.append(dict(at=0.25, msg=f"{e.name.split(',')[0]} makes a last stand!", speed=1.25, block=20,
+                             done=False, scale=scale))
+    for cid in getattr(run, "consumables", []):  # consumables bought for this battle
+        c = CONSUMABLES[cid]
+        p.block += c.get("block", 0)
+        p.dodge += c.get("dodge", 0)
+        p.regen += c.get("regen", 0)
+        e.burn += c.get("enemy_burn", 0)
+        if c.get("poison_immune"):
+            p.poison_immune = True
+        for ci in p.items:
+            if c.get("speed") and not ci.st.get("trigger"):
+                ci.cd = round(ci.cd / (1 + c["speed"]), 2)
+            if c.get("weapon_dmg") and ci.st.get("dmg") and "weapon" in ci.st.get("tags", ()):
+                ci.st["dmg"] = (ci.st["dmg"][0] + c["weapon_dmg"], ci.st["dmg"][1] + c["weapon_dmg"])
+    if run.stage >= BLOOD_MOON_STAGE or (asc >= 10 and run.stage >= 3):   # Blood Moon: enemies enraged
         e.crit += BLOOD_MOON_CRIT
         for ci in e.items:
             ci.cd = round(ci.cd * BLOOD_MOON_SPEED, 2)
@@ -324,6 +354,7 @@ class Battle:
         self.fatigue_t = 0.0
         self.log = []                # one entry per item activation: dict(t, side, name, id, delta)
         self.totals = [{}, {}]       # damage each side dealt through statuses (poison, burn, thorns...)
+        self._pending = []           # triggered items waiting to fire: (side, CItem)
         self._cur = None             # the item currently activating (credited with its effects)
         self._cur_side = None
 
@@ -361,6 +392,8 @@ class Battle:
                 self._credit("heal", amount)
             f.hp += amount
             self._emit("heal", side, amount)
+            f.heals += 1
+            self._count_trigger(side, "heal_count", f.heals)
 
     def _strike(self, side, ci):
         me, foe = self.f[side], self.f[1 - side]
@@ -379,6 +412,10 @@ class Battle:
         if crit:
             dmg = int(dmg * CRIT_MULT)
             self._credit("crits", 1)
+            for other in me.items:
+                if other.st.get("trigger") == "adjacent_crit" and ci.uid is not None \
+                        and ci.uid in other.st.get("adj", ()) and other is not ci:
+                    self._pending.append((side, other))
             if (me.poison_on_crit or me.crit_poison) and not foe.poison_immune:
                 foe.poison += me.poison_on_crit + me.crit_poison
                 self._credit("poison", me.poison_on_crit + me.crit_poison)
@@ -391,6 +428,8 @@ class Battle:
         dmg = self._cursed(me, dmg)
         dealt = self._damage(1 - side, dmg, "hit", crit, pierce_amt=me.armor_pierce)
         self._on_hit_taken(1 - side)
+        foe.hits_taken += 1
+        self._count_trigger(1 - side, "hits_taken", foe.hits_taken)
         if me.resolve_max and me.resolve < me.resolve_max:
             me.resolve += 1
         if st.get("lifesteal") and dealt:
@@ -490,6 +529,8 @@ class Battle:
             me.block += st["block"]
             self._credit("block", st["block"])
             self._emit("block", side, st["block"])
+            me.block_gains += 1
+            self._count_trigger(side, "block_count", me.block_gains)
         if st.get("summon"):
             self._credit("summons", 1)
             if len(me.summons) < SUMMON_CAP:
@@ -536,6 +577,22 @@ class Battle:
             foe.stun_t = st["stun"]
             foe.stun_immune = st["stun"] + STUN_IMMUNITY
             self._emit("stun", 1 - side, text=f"STUNNED {st['stun']:.1f}s")
+
+    def _count_trigger(self, side, kind, count):
+        for ci in self.f[side].items:
+            st = ci.st
+            if st.get("trigger") == kind and st.get("n") and count % st["n"] == 0:
+                self._pending.append((side, ci))
+
+    def _flush_triggers(self):
+        """Fire triggered items. A trigger can cause another (chains), but never more than 8 in a row."""
+        n = 0
+        while self._pending and n < 8:
+            side, ci = self._pending.pop(0)
+            n += 1
+            if self.f[side].hp > 0 and self.f[side].stun_t <= 0:
+                self._activate(side, ci)
+        self._pending.clear()
 
     def _status(self, side, dt):
         me, foe = self.f[side], self.f[1 - side]
@@ -600,10 +657,12 @@ class Battle:
                     f.stamina -= ci.cost
                     ci.timer -= ci.cd
                     self._activate(side, ci)
+                    self._flush_triggers()
             if f.summons:
                 self._summons_act(side, dt)
         for side in (0, 1):
             self._status(side, dt)
+        self._flush_triggers()                 # e.g. a Regen heal completing a heal_count
         if self.t >= FATIGUE_START:
             self.fatigue_t += dt
             if self.fatigue_t >= 1.0:

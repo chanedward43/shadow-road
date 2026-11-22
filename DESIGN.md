@@ -362,3 +362,38 @@ Class tuning comes from `tools/endless_report.py`, which uses the trained agents
 Every Arena run is saved, newest first, under the `arena_history` storage key (last 100 runs). Each record holds the
 result, wins and losses, rounds, final kit and techniques. It also holds every fight: the round, the result,
 the opponent's name and class, whether it was a player or an AI ghost, and their record at the time.
+
+## v0.80: Juice, Ascension, conditional items, economy, consumables, story threads, Arena floors
+- **Audio**: `roguegame/audio.py` plays OGGs made by `tools/import_audio.py` from the Ninja Adventure pack. That is
+  26 sound effects plus 6 looping tracks, about 1.4 MB. Each screen picks its own track. Battle events trigger
+  sounds, and a sound never stacks more than once every 60 ms.
+- **Screen shake**: the game draws to an off-screen canvas, which is copied to the window with a small offset.
+  Crits shake it a little, Ambush and Ki Burst more, boss phases the most.
+- **Settings** (`settings.py`) and **progress** (`progress.py`: hints, achievements, kills, ascension unlocks)
+  use the same storage as match history, so they survive updates.
+- **Ascension** (A1-A10, unlocked per class): each level adds one rule on top of the last.
+  1. Elites +15%.
+  2. Shop prices +20%.
+  3. Bosses +15%.
+  4. -10% max HP.
+  5. Elites +2 Regen.
+  6. Rest heals 20%.
+  7. Mobs +10%.
+  8. Bosses get a last-stand phase at 25% HP.
+  9. -25% ryō from battles.
+  10. Blood Moon over stage 3.
+- **Triggers** in combat:
+  - `adjacent_crit`, `block_count`, `hits_taken` and `heal_count` items wait in a queue.
+  - The queue fires after the current activation, with at most 8 chained triggers.
+  - `effective_stats` records each item's neighbours (`adj`) and applies `alone_dmg`.
+- **Economy**: `RunState.after_battle(won, kind)` pays out kit items and uses up consumables. Prices go through
+  `RunState.price()` (ascension and Soroban discount).
+- **Story threads**: the flags `run.flags["tanuki"]` and `run.flags["ronin"]` are set by stage-1 and stage-2
+  events. `place_omens` turns one map node on the next stage into an **Omen** with the payoff (a gift or a
+  revenge fight).
+- **Arena floors**: each Arena round is a short random map (`arena.gen_floor`). It has 2 rows of practice
+  fights, elites, a shrine, events, a forge, a bounty and a dojo, then a merchant, then the ghost duel.
+  Practice fights fully heal you afterwards, and losing one only skips the rewards. AI ghosts get matching
+  floor bonuses each round.
+- **AI**: item features now include economy value, trigger power and the alone bonus. All events, including
+  the new ones, have features, so the agents were retrained.

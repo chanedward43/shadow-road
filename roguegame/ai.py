@@ -55,7 +55,24 @@ def item_features(iid, run):
           d.get("grow", 0) / 1.5 + d.get("steal_block", 0) / 5.0 + d.get("cleanse", 0) / 3.0,
           (weapon_stamina_cost(d) / d["cd"]) if d.get("cd") else 0.0,
           per("stamina_gain") + d.get("s_stamina", 0) / 3.0 + d.get("s_stamina_regen", 0)]
+    f += [_economy(d), _trigger_power(d), d.get("alone_dmg", 0) / 5.0]
     return np.array(f)
+
+
+def _economy(d):
+    """Roughly: ryō per battle this item earns (or saves)."""
+    return (d.get("gold_per_win", 0) + d.get("interest", 0) / 5.0 + d.get("gold_per_boss", 0) / 4.0
+            + d.get("discount", 0) * 15) / 4.0
+
+
+def _trigger_power(d):
+    """Conditional items: how much one trigger does, divided by how rarely it fires."""
+    if not d.get("trigger"):
+        return 0.0
+    one = (sum(d["dmg"]) / 2 if d.get("dmg") else 0) + d.get("block", 0) + d.get("heal", 0) * 2 \
+        + d.get("curse", 0) * 3 + d.get("hex", 0) * 3
+    every = d.get("n") or 3
+    return one / every / 4.0
 
 
 def _tag_count(run, tag):
@@ -68,13 +85,13 @@ def _synergy(iid, run):
     return sum(1 for i in run.bag.items if tags & set(i.data["tags"])) / 6.0
 
 
-ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 12
+ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 12 + 3
 
 
 def path_features(kind, run):
     s = _state(run)
     one = np.zeros(len(KINDS) * 4)
-    k = KINDS.index(kind)
+    k = KINDS.index("event" if kind == "omen" else kind)   # an Omen is a story event to the AI
     one[k * 4:(k + 1) * 4] = [1.0, *s]
     return one
 
@@ -87,6 +104,8 @@ def rest_features(choice, run):
 
 def event_features(label, run):
     f = np.zeros(len(EVENT_OPTS) * 2)
+    if label not in EVENT_OPTS:              # newer events have no learned feature yet
+        return f
     k = EVENT_OPTS.index(label)
     f[k * 2:(k + 1) * 2] = [1.0, run.hp / max(1, run.max_hp)]
     return f
@@ -173,7 +192,7 @@ def describe_policy(agent, top=8):
              + ["aura", "dps", "block/s", "heal/s", "poison/s", "burn/s", "stun", "dodge/s", "evade", "crit",
                 "start_block+hp", "lifesteal", "heal_when_hurt", "summon_dps", "curse/s", "hex", "ki/s",
                 "ki_burst", "counter+start_curse", "per_tag_bonus", "on_crit", "synergy",
-                "grow/steal/cleanse", "stamina_use/s", "stamina_gain"])
+                "grow/steal/cleanse", "stamina_use/s", "stamina_gain", "economy", "trigger_power", "alone_dmg"])
     w = agent.w["item"]
     order = np.argsort(-np.abs(w))[:top]
     return [(names[i] if i < len(names) else str(i), round(float(w[i]), 2)) for i in order]

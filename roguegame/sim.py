@@ -5,7 +5,7 @@ It follows exactly the same rules as the real game screens.
 """
 from .combat import make_battle, effective_stats
 from .data import ITEMS, RARITIES
-from .events import pick_event, options_for, resolve
+from .events import pick_event, options_for, resolve, omen_event
 from .run import RunState
 
 STOP = "__stop__"
@@ -97,6 +97,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
         b = make_battle(run, eid, run.enemy_scale(kind), seed=run.rng.randrange(1 << 30))
         b.run_to_end()
         run.hp = max(0, min(run.max_hp, b.f[0].hp))
+        run.after_battle(b.winner == 0, kind)
         out["encounters"].append((eid, kind, b.winner == 0))
         if b.winner != 0:
             out["died_to"] = eid
@@ -137,7 +138,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
         elif kind == "shop":
             offers = run.shop_offers()
             for _ in range(5):
-                afford = [o for o in offers if ITEMS[o]["price"] <= run.gold]
+                afford = [o for o in offers if run.price(o) <= run.gold]
                 if not afford:
                     break
                 opts = afford + [STOP]
@@ -145,7 +146,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                 out["offered"].extend(afford)
                 if opts[i] == STOP:
                     break
-                run.gold -= ITEMS[opts[i]]["price"]
+                run.gold -= run.price(opts[i])
                 run.add_item(opts[i])
                 out["picks"].append(opts[i])
                 offers.remove(opts[i])
@@ -157,8 +158,8 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                 run.rest()
             else:
                 run.train()
-        elif kind == "event":
-            ev = pick_event(run)
+        elif kind in ("event", "omen"):
+            ev = omen_event(run, node["omen"]) if kind == "omen" else pick_event(run)
             valid = [(i, o) for i, o, ok in options_for(run, ev) if ok]
             labels = [f"{ev['id']}:{i}" for i, _ in valid]
             choice = valid[decide("event", labels)][0]

@@ -8,12 +8,13 @@ import pygame
 from . import ui
 from .ui import W, H, text, text_block, panel, Button
 from .data import (ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE, sell_value,
-                   ENDLESS_STAGE_HP, ENDLESS_PASSIVES, BLOOD_MOON_STAGE)
-from . import save, history, arena, online
+                   ENDLESS_STAGE_HP, ENDLESS_PASSIVES, BLOOD_MOON_STAGE, CONSUMABLES, MAX_CONSUMABLES,
+                   ASCENSION, MAX_ASCENSION)
+from . import save, history, arena, online, audio, progress, settings
 from .version import VERSION
 from .run import RunState, fresh_seed
 from .combat import make_battle, make_pvp_battle, effective_stats
-from .events import pick_event, options_for, resolve
+from .events import pick_event, options_for, resolve, omen_event, OMENS
 from .inventory import Grid, ItemInst
 from .sim import pack
 
@@ -22,6 +23,7 @@ CUR = "ryō"
 
 class Scene:
     map_ok = False          # screens set this to show the Map button (and allow the M key)
+    music = None            # music track while this screen is open (a method may pick one)
 
     def __init__(self, game):
         self.game = game
@@ -75,8 +77,10 @@ def top_bar(s, run, title=""):
     else:
         st = STAGES[run.stage]
         label = f"Endless {run.stage}" if getattr(run, "mode", "story") == "endless" else f"Stage {run.stage}/3"
-        col = (240, 90, 90) if run.stage >= BLOOD_MOON_STAGE else ui.TEXT
-        text(s, f"{label} - {st['name']}", (460, 11), 20, col, True)
+        col = (240, 90, 90) if run.blood_moon_now else ui.TEXT
+        r = text(s, f"{label} - {st['name']}", (460, 11), 20, col, True)
+        if run.asc:
+            text(s, f"A{run.asc}", (r.right + 12, 11), 20, (200, 140, 255), True)
     if title:
         text(s, title, (W - 130, 11), 20, ui.DIM, True, right=True)
 
@@ -93,6 +97,31 @@ def draw_hearts(s, pos, n, total=None, size=9):
         pygame.draw.polygon(s, col, [(cx - size, y - size // 4), (cx + size, y - size // 4), (cx, y + size)])
 
 
+def run_music(game):
+    run = game.run
+    if run is None:
+        return "title"
+    if getattr(run, "arena", None):
+        return "arena"
+    return "bloodmoon" if run.blood_moon_now else "map"
+
+
+def announce(game, unlocked):
+    """Toast newly unlocked achievements / ascension levels."""
+    for a in unlocked:
+        if a[0] == "asc_up":
+            game.toast(f"{a[1]} for {CHARACTERS[a[2]]['name']}!", (200, 140, 255), 5)
+            audio.play("levelup")
+        else:
+            game.toast(f"Achievement unlocked: {a[1]}", ui.GOLD, 5)
+            audio.play("achievement")
+
+
+def hint(game, key, msg):
+    if progress.hint_once(key):
+        game.toast(msg, (150, 210, 255), 8)
+
+
 def draw_petals(s, t, n=45):
     for i in range(n):
         x = (i * 137 + t * (14 + i % 5) * 3) % W
@@ -102,20 +131,22 @@ def draw_petals(s, t, n=45):
 
 # =================================================================== title
 class TitleScene(Scene):
+    music = "title"
+
     def __init__(self, game):
         super().__init__(game)
         self.t = 0
-        self.buttons = [
-            Button((W // 2 - 130, 375, 260, 52), "New Journey", lambda: game.change(CharSelectScene(game)), 24),
-            Button((W // 2 - 130, 495, 260, 52), "Arena (online)", lambda: game.change(ArenaLobbyScene(game)),
-                   24),
-            Button((W // 2 - 130, 555, 260, 52), "Match History", lambda: game.change(MatchHistoryScene(game)),
-                   24),
-            Button((W // 2 - 130, 615, 260, 52), "Quit", game.quit, 24),
-        ]
         self.saved = save.load_run()
-        self.buttons.insert(1, Button((W // 2 - 130, 435, 260, 52), "Continue", self.resume, 24,
-                                      enabled=self.saved is not None))
+        lx, rx, bw, bh = W // 2 - 290, W // 2 + 10, 280, 54
+        self.buttons = [
+            Button((lx, 390, bw, bh), "New Journey", lambda: game.change(CharSelectScene(game)), 24),
+            Button((lx, 456, bw, bh), "Continue", self.resume, 24, enabled=self.saved is not None),
+            Button((lx, 522, bw, bh), "Arena (online)", lambda: game.change(ArenaLobbyScene(game)), 24),
+            Button((rx, 390, bw, bh), "Match History", lambda: game.change(MatchHistoryScene(game)), 24),
+            Button((rx, 456, bw, bh), "Achievements", lambda: game.change(AchievementsScene(game)), 24),
+            Button((rx, 522, bw, bh), "Settings", lambda: game.change(SettingsScene(game)), 24),
+            Button((W // 2 - 110, 600, 220, 48), "Quit", game.quit, 20),
+        ]
 
     def resume(self):
         self.game.run = self.saved
@@ -127,17 +158,21 @@ class TitleScene(Scene):
     def draw(self, s):
         s.fill(ui.BG)
         draw_petals(s, self.t)
-        pygame.draw.circle(s, (170, 40, 40), (W // 2, 205), 150)       # rising sun
-        pygame.draw.circle(s, ui.BG, (W // 2, 205), 138)
-        text(s, "SHADOW ROAD", (W // 2, 200), 84, ui.GOLD, True, center=True)
-        text(s, "Pack your blade. Walk the road. Cut down the demons of old Japan.", (W // 2, 290), 22,
+        pygame.draw.circle(s, (70, 22, 28), (W // 2, 190), 150)        # rising sun
+        pygame.draw.circle(s, (120, 34, 40), (W // 2, 190), 150, 6)
+        text(s, "SHADOW ROAD", (W // 2 + 3, 193), 84, (20, 12, 14), True, center=True)
+        text(s, "SHADOW ROAD", (W // 2, 190), 84, ui.GOLD, True, center=True)
+        text(s, "Pack your blade. Walk the road. Cut down the demons of old Japan.", (W // 2, 296), 22,
              ui.DIM, center=True)
-        text(s, "Art: Ninja Adventure pack by Pixel-Boy & AAA (CC0)", (W // 2, 330), 16, ui.DIM, center=True)
+        text(s, "Art & audio: Ninja Adventure pack by Pixel-Boy & AAA (CC0)", (W // 2, H - 24), 13, ui.DIM,
+             center=True)
         self.draw_buttons(s)
 
 
 # =================================================================== character select
 class CharSelectScene(Scene):
+    music = "title"
+
     def __init__(self, game, arena_mode=False):
         super().__init__(game)
         self.arena_mode = arena_mode
@@ -145,7 +180,7 @@ class CharSelectScene(Scene):
         self.sel = None
         n = len(self.ids)
         cw = (W - 40 - (n - 1) * 10) // n
-        self.cards = [pygame.Rect(20 + i * (cw + 10), 80, cw, 545) for i in range(n)]
+        self.cards = [pygame.Rect(20 + i * (cw + 10), 80, cw, 528) for i in range(n)]
         self.begin = Button((W // 2 - 140, 640, 280, 54), "Set Out", self.start, 24, enabled=False)
         back = (lambda: game.change(ArenaLobbyScene(game))) if arena_mode else (lambda: game.change(TitleScene(game)))
         self.buttons = [self.begin, Button((20, 650, 120, 44), "Back", back)]
@@ -153,7 +188,16 @@ class CharSelectScene(Scene):
         if not arena_mode:
             self.mode_btns = [Button((W - 340, 645, 150, 44), "Story", lambda: self.set_mode("story"), 18),
                               Button((W - 180, 645, 160, 44), "Endless", lambda: self.set_mode("endless"), 18)]
-            self.buttons += self.mode_btns
+            self.asc = 0
+            self.asc_btns = [Button((160, 645, 44, 44), "<", lambda: self.step_asc(-1), 20),
+                             Button((380, 645, 44, 44), ">", lambda: self.step_asc(1), 20)]
+            self.buttons += self.mode_btns + self.asc_btns
+
+    def step_asc(self, d):
+        if self.sel is None:
+            return
+        top = progress.asc_unlocked(self.ids[self.sel])
+        self.asc = max(0, min(top, self.asc + d))
 
     def set_mode(self, mode):
         self.mode = mode
@@ -165,7 +209,7 @@ class CharSelectScene(Scene):
             self.game.run = arena.new_run(self.ids[self.sel], fresh_seed(extra))
             self.game.change(arena_next_round(self.game))
             return
-        self.game.run = RunState(self.ids[self.sel], seed=fresh_seed(extra), mode=self.mode)
+        self.game.run = RunState(self.ids[self.sel], seed=fresh_seed(extra), mode=self.mode, asc=self.asc)
         self.game.change(StageScene(self.game, first=True))
 
     def handle(self, ev):
@@ -176,6 +220,8 @@ class CharSelectScene(Scene):
                 if r.collidepoint(ev.pos):
                     self.sel = i
                     self.begin.enabled = True
+                    if not self.arena_mode:
+                        self.asc = progress.asc_unlocked(self.ids[i])
         return False
 
     def draw(self, s):
@@ -185,9 +231,20 @@ class CharSelectScene(Scene):
         if not self.arena_mode:
             for b in self.mode_btns:
                 b.col = (80, 70, 40) if b.label.lower() == self.mode else ui.PANEL2
-            hint = ("3 stages, then Lord Ashura." if self.mode == "story" else
+            hint = ("3 stages, then the stage-3 villain." if self.mode == "story" else
                     "Beat stage 3, then keep going. Stage 5 brings the Blood Moon.")
-            text(s, hint, (W - 20, 627), 13, ui.GOLD if self.mode == "endless" else ui.DIM, right=True)
+            text(s, hint, (W - 20, 618), 13, ui.GOLD if self.mode == "endless" else ui.DIM, right=True)
+            # ascension picker
+            top = progress.asc_unlocked(self.ids[self.sel]) if self.sel is not None else 0
+            for b in self.asc_btns:
+                b.enabled = self.sel is not None and top > 0
+            label = f"Ascension {self.asc}" if self.asc else ("Ascension: locked" if not top else "Ascension 0")
+            text(s, label, (292, 667), 17, (200, 140, 255) if self.asc else ui.DIM, True, center=True)
+            if self.asc:
+                text(s, f"A{self.asc}: {ASCENSION[self.asc]}" + ("  (+ all lower levels)" if self.asc > 1 else ""),
+                     (160, 618), 13, (200, 140, 255))
+            elif self.sel is not None and not top:
+                text(s, "Win a story run with this class to unlock Ascension 1.", (160, 618), 13, ui.DIM)
         for i, (cid, r) in enumerate(zip(self.ids, self.cards)):
             ch = CHARACTERS[cid]
             hover = r.collidepoint(pygame.mouse.get_pos())
@@ -224,21 +281,33 @@ NODE_STYLE = {
     "shop": ((220, 180, 80), "Merchant"), "rest": ((90, 170, 110), "Onsen"),
     "treasure": ((90, 160, 230), "Shrine"), "event": ((150, 100, 210), "?"),
     "boss": ((230, 50, 50), "BOSS"),
+    "omen": ((240, 200, 80), "Omen"),
+    "forge": ((210, 120, 60), "Forge"), "bounty": ((200, 160, 60), "Bounty"), "dojo": ((90, 170, 110), "Dojo"),
 }
 
 
 NODE_ART = {"fight": "map_fight", "elite": "map_elite", "boss": "map_boss", "event": "map_event",
-            "shop": "map_shop", "rest": "map_rest", "treasure": "map_shrine"}
+            "shop": "map_shop", "rest": "map_rest", "treasure": "map_shrine", "forge": "nodachi",
+            "bounty": "coin_purse", "dojo": "map_rest"}
 
 
 class MapScene(Scene):
+    def music(self):
+        return run_music(self.game)
+
     def __init__(self, game, back=None):
         super().__init__(game)
         self.run = game.run
         self.t = 0
-        self.back = back             # set when viewing the map from another screen
         if back is None:
-            save.save_run(self.run)
+            hint(game, "map", "Tip: click a glowing node to travel. Hover elites and the boss to read about them.")
+            if any(n["kind"] == "omen" for row in self.run.map for n in row):
+                hint(game, "omen", "An OMEN is on this map: a choice you made earlier is catching up with you.")
+        self.back = back             # set when viewing the map from another screen
+        self.arena = getattr(self.run, "arena", None)
+        if back is None:
+            if not self.arena:                       # arena runs are never saved over your adventure
+                save.save_run(self.run)
             self.buttons = [Button((W - 210, H - 70, 190, 50), "Your Kit", self.open_bag)]
         else:
             self.buttons = [Button((W - 210, H - 70, 190, 50), "Back", self.go_back)]
@@ -250,6 +319,8 @@ class MapScene(Scene):
         self.game.change(InventoryScene(self.game, "manage", on_done=lambda: MapScene(self.game)))
 
     def node_pos(self, r, node):
+        if self.arena:                              # a short floor: spread it across the screen
+            return int(150 + r * 230), int(140 + node["x"] * 450)
         return int(100 + r * 140), int(130 + node["x"] * 470)
 
     def node_at(self, pos, only_available=True):
@@ -280,6 +351,8 @@ class MapScene(Scene):
         g, run = self.game, self.run
         node = run.visit(rc)
         kind = node["kind"]
+        if self.arena:
+            return self.enter_arena(node, kind)
         if kind in ("fight", "elite", "boss"):
             g.change(BattleScene(g, run.pick_enemy(kind), kind, run.enemy_scale(kind)))
         elif kind == "shop":
@@ -294,6 +367,30 @@ class MapScene(Scene):
             g.change(RestScene(g))
         elif kind == "event":
             g.change(EventScene(g, pick_event(run)))
+        elif kind == "omen":
+            g.change(EventScene(g, omen_event(run, node["omen"])))
+
+    def enter_arena(self, node, kind):
+        g, run = self.game, self.run
+        back = lambda: MapScene(g)
+        if kind == "boss":
+            g.change(ArenaMatchScene(g))
+        elif kind in ("fight", "elite"):
+            g.change(BattleScene(g, run.pick_enemy(kind), kind, run.enemy_scale(kind)))
+        elif kind == "shop":
+            rnd = run.arena["round"]
+            g.change(InventoryScene(g, "shop", offers=run.shop_offers(), on_done=back,
+                                    title=f"Arena - Round {rnd}: Merchant",
+                                    message="Buy, merge and arrange - your kit is what your ghost fights with."))
+        elif kind == "treasure":
+            g.change(InventoryScene(g, "reward", offers=run.reward_choices("treasure"), on_done=back,
+                                    title="Shrine", message="The kami grant one item."))
+        elif kind == "event":
+            g.change(EventScene(g, arena.pick_floor_event(run), after=back))
+        else:                                        # forge / bounty / dojo
+            g.toast(arena.resolve_floor(run, kind), ui.GOLD, 4)
+            audio.play("event")
+            g.change(back())
 
     def update(self, dt):
         self.t += dt
@@ -303,8 +400,13 @@ class MapScene(Scene):
         run = self.run
         top_bar(s, run, "Choose your path" if self.back is None else "Map (viewing)")
         st = STAGES[run.stage]
-        text(s, st["name"], (30, 58), 24, ui.GOLD, True)
-        text(s, st["subtitle"], (30, 88), 15, ui.DIM)
+        if self.arena:
+            text(s, f"Arena floor - round {self.arena['round']}", (30, 58), 24, ui.GOLD, True)
+            text(s, "Floor fights are practice: lose and you only miss the rewards. The ghost duel counts.",
+                 (30, 88), 15, ui.DIM)
+        else:
+            text(s, st["name"], (30, 58), 24, ui.GOLD, True)
+            text(s, st["subtitle"], (30, 88), 15, ui.DIM)
         avail = set(run.available_nodes())
         for r, row in enumerate(run.map[:-1]):
             for node in row:
@@ -328,37 +430,49 @@ class MapScene(Scene):
                     fill = (60, 56, 70)
                 pygame.draw.circle(s, fill, (x, y), rad)
                 pygame.draw.circle(s, ui.TEXT if is_av else ui.LINE, (x, y), rad, 2)
-                pic = ui.art(NODE_ART.get(node["kind"], ""), int(rad * 1.25))
+                key = OMENS[node["omen"]]["art"] if node["kind"] == "omen" else NODE_ART.get(node["kind"], "")
+                pic = ui.art(key, int(rad * 1.25))
                 if pic:
                     if dim:
                         pic = pic.copy()
                         pic.set_alpha(110)
                     s.blit(pic, pic.get_rect(center=(x, y)))
-                    if is_av and node["kind"] != "boss":
-                        text(s, label, (x, y + rad + 11), 12, ui.TEXT, True, center=True)
+                    if (is_av and node["kind"] != "boss") or (node["kind"] == "omen" and not node.get("visited")):
+                        text(s, label, (x, y + rad + 11), 12, (240, 200, 80) if node["kind"] == "omen" else ui.TEXT,
+                             True, center=True)
                 else:
                     text(s, label, (x, y), 12 if len(label) > 6 else (18 if rad > 30 else 14), ui.TEXT, True,
                          center=True)
         # boss name under the boss node (readability: you always know what you're preparing for)
-        boss = ENEMIES[run.boss_id()]
         bx, by = self.node_pos(len(run.map) - 1, run.map[-1][0])
-        text(s, boss["name"].split(",")[0], (bx, by + 50), 15, ui.RED, True, center=True)
+        if self.arena:
+            text(s, "Ghost duel", (bx, by + 50), 15, ui.RED, True, center=True)
+        else:
+            boss = ENEMIES[run.boss_id()]
+            text(s, boss["name"].split(",")[0], (bx, by + 50), 15, ui.RED, True, center=True)
 
         # right column: legend + techniques + hovered node info
         lx, ly = W - 250, 62
-        panel(s, (lx - 10, ly - 6, 240, 246))
         tips = {"fight": "Enemy", "elite": "Tough foe + technique", "shop": "Buy & sell",
                 "rest": "Heal or train", "treasure": "Free item", "event": "Mystery event",
-                "boss": "Stage villain"}
-        for i, (k, (col, label)) in enumerate(NODE_STYLE.items()):
-            yy = ly + 4 + i * 34
+                "boss": "Stage villain", "omen": "Your past returns", "forge": "Level up an item",
+                "bounty": "Free ryō", "dojo": "+4 max HP"}
+        if self.arena:
+            tips.update(fight="Practice fight", elite="Hard practice", boss="Ghost duel (counts!)")
+        present = {n["kind"] for row in run.map for n in row}
+        legend = [(k, v) for k, v in NODE_STYLE.items() if k in present]   # only what's on this map
+        panel(s, (lx - 10, ly - 6, 240, 14 + 31 * len(legend)))
+        for i, (k, (col, label)) in enumerate(legend):
+            yy = ly + 4 + i * 31
             pygame.draw.circle(s, col, (lx + 12, yy + 9), 10)
             text(s, f"{label}: {tips[k]}", (lx + 30, yy), 14, ui.DIM)
-        y = ly + 254
+        y = ly + 30 + 31 * len(legend)
         text(s, "Techniques", (lx, y), 18, ui.TEXT, True)
         y += 26
         if not run.techniques:
-            y = text_block(s, "None yet. Defeat elites and bosses to learn them.", (lx, y), 225, 14, ui.DIM)
+            none = ("None yet. You learn one at rounds 3, 6 and 9." if self.arena else
+                    "None yet. Defeat elites and bosses to learn them.")
+            y = text_block(s, none, (lx, y), 225, 14, ui.DIM)
         for tid in run.techniques:
             text(s, "- " + TECHNIQUES[tid]["name"], (lx, y), 15, ui.GOLD)
             y += 20
@@ -383,6 +497,9 @@ class InventoryScene(Scene):
     """mode: 'shop' (buy offers), 'reward' (take one offer free), 'manage' (just arrange)."""
     map_ok = True
 
+    def music(self):
+        return run_music(self.game)
+
     def __init__(self, game, mode, offers=None, on_done=None, title="", message="", drops=()):
         super().__init__(game)
         self.drops = set(drops)
@@ -399,10 +516,10 @@ class InventoryScene(Scene):
         self.bag_o = (30, 300)
         self.stash_o = (470, 300)
         self.sell_rect = pygame.Rect(470, 540, 6 * CELL, 70)
-        self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 188) for i in range(len(self.offers))]
+        self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 172) for i in range(len(self.offers))]
         label = {"manage": "Done", "shop": "Leave", "reward": "Continue"}[mode]
-        if getattr(self.run, "arena", None):
-            label = "Ready - Fight!" if mode == "shop" else label
+        if getattr(self.run, "arena", None) and mode == "shop":
+            label = "Back to the floor"
         self.buttons = [Button((W - 230, H - 70, 210, 52), label, self.done, 22)]
         if mode == "shop":
             self.reroll_btn = Button((850, 228, 180, 44), "", self.reroll, 18)
@@ -411,6 +528,15 @@ class InventoryScene(Scene):
                          Button((1060, 92, 200, 40), "Merge all", self.merge_all, 17)]
         self.undo = None                      # last Shift+click sale, undoable for a few seconds
         self.undo_btn = Button((470, 616, 200, 32), "Undo sell", self.undo_sell, 15)
+        self.rotate_btn = Button((W - 230, H - 70, 210, 52), "Rotate (R)", self.rotate_held, 20)
+        self.cons_offers = []
+        if mode == "shop" and not getattr(self.run, "arena", None):
+            self.cons_offers = self.run.shop_consumables()
+        self.cons_rects = [pygame.Rect(850 + i * 210, 140, 200, 80) for i in range(len(self.cons_offers))]
+        hint(game, "bag", "Tip: drag items onto the tatami to equip them. Drop an identical item on another to "
+                          "merge it. Right-click or R rotates.")
+        if self.cons_offers:
+            hint(game, "consumable", "Consumables (top right) are used up in your NEXT battle. Hold up to 3.")
 
     # ---------- actions
     def done(self):
@@ -427,7 +553,7 @@ class InventoryScene(Scene):
             self.run.gold -= c
             self.run.rerolls += 1
             self.offers = self.run.shop_offers()
-            self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 188) for i in range(len(self.offers))]
+            self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 172) for i in range(len(self.offers))]
 
     def say(self, msg):
         self.flash_msg, self.flash_t = msg, 2.5
@@ -453,6 +579,7 @@ class InventoryScene(Scene):
         self.undo = dict(inst=inst, grid=grid, x=inst.x, y=inst.y, rot=inst.rot, value=value, t=5.0)
         grid.remove(inst)
         self.run.gold += value
+        audio.play("sell")
         self.say(f"Sold {ITEMS[inst.id]['name']} for {value} {CUR}.")
 
     def undo_sell(self):
@@ -484,6 +611,8 @@ class InventoryScene(Scene):
 
     def merge_all(self):
         n = self.run.auto_merge()
+        if n:
+            audio.play("merge")
         self.say(f"Merged {n} pair{'s' if n != 1 else ''}." if n else "Nothing to merge.")
 
     def add_offer(self, iid, to_kit):
@@ -492,22 +621,39 @@ class InventoryScene(Scene):
         inst = ItemInst(iid)
         return self.run.bag.first_fit(inst) or self.run.stash.first_fit(inst)
 
+    def click_consumable(self, i):
+        cid = self.cons_offers[i]
+        if cid is None:
+            return
+        price = self.run.price(cid)
+        if self.run.gold < price:
+            return self.say(f"Not enough {CUR}.")
+        if not self.run.add_consumable(cid):
+            return self.say(f"You can only carry {MAX_CONSUMABLES} consumables.")
+        self.run.gold -= price
+        self.cons_offers[i] = None
+        audio.play("buy")
+        self.say(f"Bought {CONSUMABLES[cid]['name']}: used in your next battle.")
+
     def click_offer(self, i, to_kit=False):
         iid = self.offers[i]
         if iid is None:
             return
-        price = ITEMS[iid]["price"]
+        price = self.run.price(iid)
         if self.mode == "shop":
             if self.run.gold < price:
+                audio.play("back")
                 return self.say(f"Not enough {CUR}.")
             if not self.add_offer(iid, to_kit):
                 return self.say("No room! Pawn something or rearrange.")
             self.run.gold -= price
             self.offers[i] = None
+            audio.play("buy")
         elif self.mode == "reward":
             if not self.add_offer(iid, to_kit):
                 return self.say("No room! Pawn something or rearrange.")
             self.offers = [None] * len(self.offers)
+            audio.play("event")
             self.say(f"Took {ITEMS[iid]['name']}.")
 
     def grid_at(self, pos):
@@ -548,6 +694,7 @@ class InventoryScene(Scene):
         if self.sell_rect.collidepoint(pos):
             value = sell_value(inst.id, inst.level)
             self.run.gold += value
+            audio.play("sell")
             self.say(f"Pawned {ITEMS[inst.id]['name']} for {value} {CUR}.")
             self.held = None
             return
@@ -556,6 +703,7 @@ class InventoryScene(Scene):
         if other and self.run.can_merge(other, inst):
             other.level += 1
             self.held = None
+            audio.play("merge")
             self.say(f"Merged! {ITEMS[other.id]['name']} is now level {other.level}.")
             return
         tgt = self.drop_target(pos)
@@ -612,9 +760,16 @@ class InventoryScene(Scene):
             return True
         if ev.type == pygame.MOUSEBUTTONDOWN:
             if ev.button == 1:
+                if self.held and self.rotate_btn.rect.collidepoint(ev.pos):
+                    self.rotate_held()
+                    return True
                 if self.held:
                     self.drop(ev.pos)
                     return True
+                for i, r in enumerate(self.cons_rects):
+                    if r.collidepoint(ev.pos):
+                        self.click_consumable(i)
+                        return True
                 mods = pygame.key.get_mods()
                 ctrl, shift = mods & pygame.KMOD_CTRL, mods & pygame.KMOD_SHIFT
                 if self.undo and self.undo_btn.handle(ev):
@@ -644,7 +799,8 @@ class InventoryScene(Scene):
             h = self.held
             o = self.bag_o if h["grid"] is self.run.bag else self.stash_o
             start = (o[0] + h["x"] * CELL + h["off"][0], o[1] + h["y"] * CELL + h["off"][1])
-            if math.hypot(ev.pos[0] - start[0], ev.pos[1] - start[1]) > 12:
+            if math.hypot(ev.pos[0] - start[0], ev.pos[1] - start[1]) > 12 \
+                    and not self.rotate_btn.rect.collidepoint(ev.pos):
                 self.drop(ev.pos)
         elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_r:
             self.rotate_held()
@@ -723,16 +879,35 @@ class InventoryScene(Scene):
             cs = 36
             w = (max(c[0] for c in shp) + 1) * cs
             h = (max(c[1] for c in shp) + 1) * cs
-            ui.draw_item(s, iid, shp, r.centerx - w // 2, r.y + 8 + (116 - h) // 2, cs)
-            text(s, d["name"], (r.centerx, r.bottom - 52), 14, ui.TEXT, True, center=True)
+            ui.draw_item(s, iid, shp, r.centerx - w // 2, r.y + 6 + (106 - h) // 2, cs)
+            name = d["name"] if ui.font(14, True).size(d["name"])[0] <= r.width - 12 else d["name"][:17] + "."
+            text(s, name, (r.centerx, r.bottom - 48), 14, ui.TEXT, True, center=True)
             if self.mode == "shop":
-                col = ui.GOLD if run.gold >= d["price"] else ui.RED
-                text(s, f"{d['price']} {CUR}", (r.centerx, r.bottom - 26), 16, col, True, center=True)
+                price = run.price(iid)
+                col = ui.GOLD if run.gold >= price else ui.RED
+                text(s, f"{price} {CUR}", (r.centerx, r.bottom - 22), 16, col, True, center=True)
             else:
-                text(s, "ENEMY DROP" if iid in self.drops else "FREE", (r.centerx, r.bottom - 26), 16,
+                text(s, "ENEMY DROP" if iid in self.drops else "FREE", (r.centerx, r.bottom - 22), 16,
                      ui.GOLD if iid in self.drops else ui.GREEN, True, center=True)
             if hov:
-                hover_tip = (iid, None, d["price"] if self.mode == "shop" else None, None)
+                hover_tip = (iid, None, run.price(iid) if self.mode == "shop" else None, None)
+        cons_tip = None
+        for cid, r in zip(self.cons_offers, self.cons_rects):
+            if cid is None:
+                panel(s, r, (24, 22, 30), ui.LINE)
+                continue
+            c = CONSUMABLES[cid]
+            hov = r.collidepoint(mouse) and not self.held
+            panel(s, r, ui.PANEL2 if hov else ui.PANEL, (120, 200, 170))
+            pic = ui.art(c["art"], 34)
+            if pic:
+                s.blit(pic, pic.get_rect(center=(r.x + 26, r.centery)))
+            text(s, c["name"], (r.x + 50, r.y + 10), 14, ui.TEXT, True)
+            price = run.price(cid)
+            text(s, f"{price} {CUR}", (r.x + 50, r.y + 30), 14, ui.GOLD if run.gold >= price else ui.RED, True)
+            text(s, "consumable", (r.right - 8, r.y + 30), 11, (120, 200, 170), right=True)
+            if hov:
+                cons_tip = c
         if not self.offers:
             text(s, "Arrange your kit. Only items on the TATAMI are equipped and fight for you.", (30, 70), 18,
                  ui.DIM)
@@ -748,8 +923,26 @@ class InventoryScene(Scene):
                 if self.held else "PAWN: drop here to sell (half price)")
         text(s, pawn, self.sell_rect.center, 16, ui.TEXT, True, center=True)
 
+        # consumables you're carrying into the next battle
+        text(s, "NEXT BATTLE:", (30, 600), 14, (120, 200, 170), True)
+        for k in range(MAX_CONSUMABLES):
+            r = pygame.Rect(150 + k * 50, 590, 42, 42)
+            panel(s, r, (26, 34, 34), (70, 110, 100), radius=6)
+            if k < len(run.consumables):
+                c = CONSUMABLES[run.consumables[k]]
+                pic = ui.art(c["art"], 30)
+                if pic:
+                    s.blit(pic, pic.get_rect(center=r.center))
+                if r.collidepoint(mouse):
+                    cons_tip = c
         rp = pygame.Rect(850, 290, 410, 330)
-        if self.held:
+        if cons_tip:
+            panel(s, rp, ui.PANEL, (120, 200, 170))
+            text(s, cons_tip["name"], (rp.x + 14, rp.y + 12), 20, (150, 230, 200), True)
+            y = ui.rich_text_block(s, cons_tip["desc"], (rp.x + 14, rp.y + 44), rp.width - 28, 16, ui.TEXT)
+            text_block(s, "Consumable: used up in your next battle, win or lose.", (rp.x + 14, y + 10),
+                       rp.width - 28, 14, ui.DIM)
+        elif self.held:
             hover_tip = (self.held["inst"].id, None, None, "Right-click / R / wheel to rotate.")
         if hover_tip:
             ui.draw_tooltip(s, hover_tip[0], rp, eff=hover_tip[1], price=hover_tip[2], extra=hover_tip[3],
@@ -790,6 +983,8 @@ class InventoryScene(Scene):
 
         if self.flash_t > 0:
             text(s, self.flash_msg, (W // 2, H - 40), 20, ui.GOLD, True, center=True)
+        if self.held is not None:
+            self.rotate_btn.draw(s)
         if self.held is None:
             self.draw_buttons(s)
             if self.undo:
@@ -803,6 +998,9 @@ class TechniqueScene(Scene):
     """Pick 1 of 3 permanent class upgrades (after elites and bosses)."""
     map_ok = True
 
+    def music(self):
+        return run_music(self.game)
+
     def __init__(self, game, then):
         super().__init__(game)
         self.run = game.run
@@ -811,8 +1009,8 @@ class TechniqueScene(Scene):
         if not self.choices:
             self.choices = []
         n = len(self.choices)
-        self.cards = [pygame.Rect(W // 2 - n * 190 + i * 380 + 10, 200, 360, 280) for i in range(n)]
-        self.buttons = [Button((W // 2 - 100, 560, 200, 50), "Skip", lambda: game.change(then()))]
+        self.cards = [pygame.Rect(W // 2 - n * 190 + i * 380 + 10, 220, 360, 200) for i in range(n)]
+        self.buttons = [Button((W // 2 - 100, 500, 200, 50), "Skip", lambda: game.change(then()))]
 
     def handle(self, ev):
         if super().handle(ev):
@@ -821,6 +1019,7 @@ class TechniqueScene(Scene):
             for tid, r in zip(self.choices, self.cards):
                 if r.collidepoint(ev.pos):
                     self.run.learn(tid)
+                    audio.play("levelup")
                     self.game.change(self.then())
                     return True
         return False
@@ -828,15 +1027,21 @@ class TechniqueScene(Scene):
     def draw(self, s):
         s.fill(ui.BG)
         top_bar(s, self.run, "Learn a technique")
-        text(s, "Your skill grows. Learn a technique:", (W // 2, 130), 30, ui.GOLD, True, center=True)
+        ch = CHARACTERS[self.run.char_id]
+        text(s, "Your skill grows", (W // 2, 120), 34, ui.GOLD, True, center=True)
+        text(s, f"Choose one {ch['name']} technique. It lasts for the rest of the run.", (W // 2, 162), 17,
+             ui.DIM, center=True)
         if not self.choices:
             text(s, "You have mastered every technique.", (W // 2, 300), 22, ui.DIM, center=True)
         for tid, r in zip(self.choices, self.cards):
             d = TECHNIQUES[tid]
             hov = r.collidepoint(pygame.mouse.get_pos())
-            panel(s, r, ui.PANEL2 if hov else ui.PANEL, ui.GOLD if hov else ui.LINE, width=3 if hov else 2)
-            text(s, d["name"], (r.centerx, r.y + 50), 26, ui.GOLD, True, center=True)
-            text_block(s, d["desc"], (r.x + 24, r.y + 100), r.width - 48, 18)
+            panel(s, r, ui.PANEL2 if hov else ui.PANEL, ui.GOLD if hov else ch["color"], width=3 if hov else 2)
+            pygame.draw.rect(s, ch["color"], (r.x + 2, r.y + 2, r.width - 4, 6), border_radius=4)
+            text(s, d["name"], (r.centerx, r.y + 46), 26, ui.GOLD, True, center=True)
+            if d.get("endless"):
+                text(s, "ENDLESS TECHNIQUE", (r.centerx, r.y + 74), 12, (200, 140, 255), True, center=True)
+            ui.rich_text_block(s, d["desc"], (r.x + 26, r.y + 98), r.width - 52, 18, ui.TEXT)
         self.draw_buttons(s)
 
 
@@ -909,6 +1114,13 @@ def short_delta(delta):
 class BattleScene(Scene):
     map_ok = True
 
+    def music(self):
+        if self.ghost is not None:
+            return "arena"
+        if self.run.blood_moon_now:
+            return "bloodmoon"
+        return "boss" if self.kind == "boss" else "battle"
+
     def __init__(self, game, enemy_id, kind, scale=1.0, ghost=None, ghost_rec=None, on_result=None):
         super().__init__(game)
         self.run = run = game.run
@@ -926,8 +1138,16 @@ class BattleScene(Scene):
         self.eff_stats = effective_stats(run.bag, run.char_id, run.techniques)
         self.show_summary = True
         self.replays = 0
-        self.speed = 1
         self.real_t = 0.0                  # wall-clock seconds watched (fight time / speed)
+        self.speed = settings.get()["speed"]
+        self.hp_before = run.hp
+        hint(game, "battle", "Battles play themselves. Teal bar = Stamina: weapons wait when it runs out. "
+                             "Hover anything for details.")
+        if run.char_id == "onmyoji":
+            hint(game, "curse", "Curse: each stack makes the enemy deal 5% less damage. Hex items hit harder "
+                                "for every Curse.")
+        if run.char_id == "sohei":
+            hint(game, "ki", "Ki builds every time you're hit. It powers your counter-attacks and Ki Bursts.")
         self.floats = []
         self.banner = ""
         self.banner_t = 0
@@ -997,7 +1217,24 @@ class BattleScene(Scene):
         if self.on_result is not None:
             self.on_result(self.battle.winner == 0)
             return
+        if getattr(run, "arena", None):              # arena floor fight: practice, full heal after
+            run.hp = run.max_hp
+            run.after_battle(self.battle.winner == 0, self.kind)
+            if self.battle.winner != 0:
+                g.toast("Defeated - no rewards, but no heart lost.", (230, 130, 130), 4)
+                g.change(MapScene(g))
+                return
+            gold = run.gold_reward(self.kind)
+            g.change(InventoryScene(g, "reward", offers=run.reward_choices(self.kind),
+                                    on_done=lambda: MapScene(g), title="Spoils",
+                                    message=f"Victory! +{gold} {CUR}. Take one."))
+            return
         run.hp = max(0, min(run.max_hp, self.pf.hp))
+        for g_, why in run.after_battle(self.battle.winner == 0, self.kind):
+            g.toast(f"{why}: +{g_} {CUR}", ui.GOLD, 3)
+            audio.play("gold")
+        if self.battle.winner == 0:
+            announce(g, progress.on_battle_won(run, self.enemy_id, self.kind, self.hp_before, run.hp))
         if self.battle.winner != 0:
             run.killed_by = self.enemy_id
             run.killed_kind = self.kind
@@ -1023,6 +1260,11 @@ class BattleScene(Scene):
             msg = f"Victory! +{gold} {CUR}. Take one - the first is what the enemy dropped" + (
                 " (its signature item!)." if signature else ".")
             offers = run.reward_choices(self.kind)
+            if run.flags.pop("champion_bounty", False):     # the Champion's Grave: a legendary
+                offers = run.legendary_choices()
+                msg = f"The champion falls. +{gold} {CUR}. Its legendary arsenal is yours: take one."
+                return InventoryScene(g, "reward", offers=offers, on_done=after_reward, title="Legendary Spoils",
+                                      message=msg)
             if drop and self.kind == "fight":
                 offers = [drop] + offers[:2]
             elif drop:
@@ -1040,6 +1282,28 @@ class BattleScene(Scene):
         else:
             g.change(reward())
 
+    def sound(self, k, e, side):
+        """Hit sounds and screen shake. Your side's hits are a little louder than the enemy's."""
+        vol = 0.9 if side == 1 else 0.7
+        if k == "hit":
+            if e["crit"]:
+                audio.play("crit", vol)
+                self.game.shake(7, 0.22)
+            else:
+                audio.play("hit" if random.random() < 0.5 else "hit2", vol * 0.8, gap=0.05)
+        elif k in ("ambush", "kiburst"):
+            audio.play("explode", 0.8)
+            self.game.shake(9, 0.3)
+        elif k == "phase":
+            audio.play("phase", 1.0)
+            self.game.shake(12, 0.45)
+        else:
+            name = {"block": "block", "heal": "heal", "evade": "evade", "stun": "stun", "summon": "summon",
+                    "poison": "poison", "burn": "burn", "hex": "curse", "counter": "hit2"}.get(k)
+            if name:
+                audio.play(name, 0.35 if k in ("poison", "burn") else 0.55, gap=0.25 if k in ("poison", "burn")
+                           else 0.08)
+
     def float_text(self, side, s, col, size=22):
         x = self.panels[side].x + 330 + random.randint(-110, 110)
         y = self.panels[side].y + 200 + random.randint(-15, 15)
@@ -1056,6 +1320,7 @@ class BattleScene(Scene):
             if not a and not e["text"] and k in ("hit", "poison", "burn", "thorns", "fatigue", "counter", "hex",
                                                  "kiburst", "summon"):
                 continue                                # fully absorbed by Block: no "-0" popups
+            self.sound(k, e, side)
             if k == "hit":
                 self.float_text(side, f"{'CRIT ' if e['crit'] else ''}-{a}", ui.RED, 30 if e["crit"] else 22)
             elif k == "poison":
@@ -1098,6 +1363,7 @@ class BattleScene(Scene):
             f["y"] -= 40 * dt
         self.floats = [f for f in self.floats if f["life"] > 0]
         if self.battle.done and not self.finished:
+            audio.play("win" if self.battle.winner == 0 else "lose")
             self.finished = True
             self.result_text = "VICTORY" if self.battle.winner == 0 else "DEFEAT"
             self.show_summary = True
@@ -1317,15 +1583,16 @@ class BattleScene(Scene):
     def draw(self, s):
         s.fill(ui.BG)
         mouse = pygame.mouse.get_pos()
-        if self.ghost is not None:
+        if self.ghost is not None or getattr(self.run, "arena", None):
             a = self.run.arena
-            text(s, f"ARENA  -  Round {a['round']}  -  {a['wins']} wins", (W // 2, 18), 22, ui.GOLD, True,
-                 center=True)
+            what = "Ghost duel" if self.ghost is not None else "practice fight"
+            text(s, f"ARENA  -  Round {a['round']} {what}  -  {a['wins']} wins", (W // 2, 18), 22, ui.GOLD,
+                 True, center=True)
         else:
             head = {"fight": "Battle", "elite": "ELITE Battle", "boss": "BOSS BATTLE"}[self.kind]
             stage = self.run.stage
             where = f"Endless {stage}" if stage > 3 else f"Stage {stage}"
-            moon = stage >= BLOOD_MOON_STAGE
+            moon = self.run.blood_moon_now
             text(s, f"{head}  -  {where}" + ("  -  BLOOD MOON" if moon else ""), (W // 2, 18), 22,
                  (240, 90, 90) if moon else ui.GOLD, True, center=True)
         # Fight time is the battle's own clock: the same number at any speed (fatigue starts at 25s).
@@ -1374,17 +1641,21 @@ class BattleScene(Scene):
 class RestScene(Scene):
     map_ok = True
 
+    def music(self):
+        return run_music(self.game)
+
     def __init__(self, game):
         super().__init__(game)
         self.run = run = game.run
-        heal = int(run.max_hp * REST_HEAL)
+        heal = int(run.max_hp * (0.2 if run.asc >= 6 else REST_HEAL))
         self.buttons = [
             Button((W // 2 - 320, 400, 300, 70), f"Bathe: heal {heal} HP", self.rest, 20),
             Button((W // 2 + 20, 400, 300, 70), "Dojo training: +5 Max HP", self.train, 20),
         ]
 
     def rest(self):
-        self.run.hp = min(self.run.max_hp, self.run.hp + int(self.run.max_hp * REST_HEAL))
+        self.run.rest()
+        audio.play("heal")
         self.game.change(MapScene(self.game))
 
     def train(self):
@@ -1408,9 +1679,13 @@ class RestScene(Scene):
 class StageScene(Scene):
     map_ok = True
 
+    def music(self):
+        return run_music(self.game)
+
     def __init__(self, game, first=False):
         super().__init__(game)
         self.run = game.run
+        announce(game, progress.on_stage(self.run))
         self.first = first
         self.t = 0
         self.buttons = [Button((W // 2 - 120, 560, 240, 56), "Continue",
@@ -1425,7 +1700,9 @@ class StageScene(Scene):
         run = self.run
         st = STAGES[run.stage]
         boss = ENEMIES[run.boss_id()]
-        moon = run.stage >= BLOOD_MOON_STAGE
+        moon = run.blood_moon_now
+        if run.asc:
+            text(s, f"ASCENSION {run.asc}", (W // 2, 30), 18, (200, 140, 255), True, center=True)
         if moon:                                       # the Blood Moon
             pygame.draw.circle(s, (120, 20, 25), (W // 2, 100), 72)
             pygame.draw.circle(s, (170, 35, 40), (W // 2, 100), 60)
@@ -1445,7 +1722,7 @@ class StageScene(Scene):
                 msg += f"  Second Wind: +{ENDLESS_STAGE_HP.get(run.char_id, 8)} max HP."
             text(s, msg, (W // 2, y), 16, ui.GREEN, center=True)
             y += 22
-        if run.stage == BLOOD_MOON_STAGE:
+        if run.stage == BLOOD_MOON_STAGE or (run.asc >= 10 and run.stage == 3):
             text(s, "THE BLOOD MOON RISES: enemies are much stronger, crit 10% more and act 10% faster.",
                  (W // 2, y), 16, (240, 90, 90), True, center=True)
             y += 22
@@ -1461,6 +1738,9 @@ class EndScene(Scene):
         self.run = game.run
         self.won = won
         self.record = history.record_run(self.run, won)
+        audio.music(None)
+        audio.play("win" if won else "lose")
+        announce(game, progress.on_run_end(self.run, won or self.run.stage >= 4))
         self.buttons_extra = Button((W // 2 - 120, 570, 240, 50), "Match History",
                                     lambda: game.change(MatchHistoryScene(game)), 20)
         self.buttons = [Button((W // 2 - 120, 500, 240, 56), "Main menu",
@@ -1494,10 +1774,14 @@ class EndScene(Scene):
 class EventScene(Scene):
     map_ok = True
 
-    def __init__(self, game, ev):
+    def music(self):
+        return run_music(self.game)
+
+    def __init__(self, game, ev, after=None):
         super().__init__(game)
         self.run = game.run
         self.ev = ev
+        self.after = after or (lambda: MapScene(game))       # the screen to go to when it's over
         self.result = None
         self.make_option_buttons()
 
@@ -1512,17 +1796,19 @@ class EventScene(Scene):
         g, run = self.game, self.run
         self.result = resolve(run, self.ev, i)
         res = self.result
+        audio.play("event")
+        after = self.after
         if res.get("battle"):
             eid, kind = res["battle"]
             nxt = lambda: g.change(BattleScene(g, eid, kind, run.enemy_scale(kind)))
             label = "Fight!"
         elif res.get("choose"):
             nxt = lambda: g.change(InventoryScene(g, "reward", offers=res["choose"],
-                                                  on_done=lambda: MapScene(g), title=self.ev["title"],
+                                                  on_done=after, title=self.ev["title"],
                                                   message="Pick one."))
             label = "Choose your reward"
         else:
-            nxt = lambda: g.change(MapScene(g))
+            nxt = lambda: g.change(after())
             label = "Continue"
         self.buttons = [Button((W // 2 - 140, 560, 280, 56), label, nxt, 22)]
 
@@ -1881,15 +2167,22 @@ def arena_next_round(game):
     def shop():
         msg = (f"Round {rnd}: +{arena.income(rnd)} {CUR}. Buy, merge and arrange your kit, then Fight. "
                f"Your kit this round is uploaded as a ghost for other players.")
-        return InventoryScene(game, "shop", offers=run.shop_offers(), on_done=lambda: ArenaMatchScene(game),
+        return InventoryScene(game, "shop", offers=run.shop_offers(), on_done=lambda: MapScene(game),
                               title=f"Arena - Round {rnd}", message=msg)
+    arena.gen_floor(run)                         # a fresh random floor: fights, nodes, merchant, ghost
+    hint(game, "arena_floor", "Each Arena round is a small floor. Floor fights are practice: lose one and you "
+                              "just get no rewards. The ghost duel at the end is what counts.")
+
+    def floor():
+        return MapScene(game)
     if arena.wants_technique(run):
-        return TechniqueScene(game, then=shop)
-    return shop()
+        return TechniqueScene(game, then=floor)
+    return floor()
 
 
 class ArenaLobbyScene(Scene):
     """Rules, your name, your best run, and this version's leaderboard."""
+    music = "arena"
 
     def __init__(self, game):
         super().__init__(game)
@@ -1944,8 +2237,8 @@ class ArenaLobbyScene(Scene):
 
     def draw(self, s):
         s.fill(ui.BG)
-        text(s, "THE ARENA", (W // 2, 26), 46, ui.GOLD, True, center=True)
-        text(s, "Fight the ghosts of other players' kits", (W // 2, 78), 18, ui.DIM, center=True)
+        text(s, "THE ARENA", (W // 2, 34), 46, ui.GOLD, True, center=True)
+        text(s, "Fight the ghosts of other players' kits", (W // 2, 82), 18, ui.DIM, center=True)
         left = pygame.Rect(30, 110, 560, 470)
         panel(s, left, ui.PANEL, ui.LINE)
         y = left.y + 16
@@ -2117,6 +2410,7 @@ class ArenaEndScene(Scene):
         self.rec = arena.score_record(run, self.profile)
         self.new_best = online.record_best(self.rec)
         history.record_arena(run)
+        announce(game, progress.on_arena_end(run))
         self.req = online.submit_score(self.rec) if online.enabled() else None
         self.buttons = [Button((W // 2 - 420, 600, 260, 56), "Arena lobby",
                                lambda: game.change(ArenaLobbyScene(game)), 22),
@@ -2152,4 +2446,154 @@ class ArenaEndScene(Scene):
             pygame.draw.rect(s, ui.GOLD if h["won"] else (150, 60, 60), (x0 + i * 34, y + 26, 28, 28),
                              border_radius=5)
             text(s, str(h["round"]), (x0 + i * 34 + 14, y + 32), 14, (20, 16, 20), True, center=True)
+        self.draw_buttons(s)
+
+
+# =================================================================== settings
+class SettingsScene(Scene):
+    music = "title"
+    ROWS = [("music", "Music volume"), ("sfx", "Sound effects"), ("speed", "Default battle speed"),
+            ("shake", "Screen shake"), ("colorblind", "Colour-blind palette"), ("hints", "First-time tips")]
+
+    def __init__(self, game):
+        super().__init__(game)
+        self.buttons = [Button((W // 2 - 110, 620, 220, 54), "Back", lambda: game.change(TitleScene(game)), 22),
+                        Button((W // 2 + 150, 548, 200, 40), "Show tips again", self.reset_hints, 16)]
+        self.row_btns = []
+        for i, (key, _) in enumerate(self.ROWS):
+            y = 160 + i * 64
+            if key in ("music", "sfx"):
+                self.row_btns += [Button((W // 2 + 40, y, 50, 44), "-", lambda k=key: self.vol(k, -0.1), 22),
+                                  Button((W // 2 + 240, y, 50, 44), "+", lambda k=key: self.vol(k, 0.1), 22)]
+            elif key == "speed":
+                for j, sp in enumerate((1, 2, 4)):
+                    self.row_btns.append(Button((W // 2 + 40 + j * 86, y, 76, 44), f"{sp}x",
+                                                lambda sp=sp: settings.set("speed", sp), 18))
+            else:
+                self.row_btns.append(Button((W // 2 + 40, y, 250, 44), "", lambda k=key: self.toggle(k), 18))
+        self.buttons += self.row_btns
+
+    def vol(self, key, d):
+        settings.set(key, round(max(0.0, min(1.0, settings.get()[key] + d)), 2))
+        audio.refresh_volume()
+        audio.play("click")
+
+    def toggle(self, key):
+        settings.set(key, not settings.get()[key])
+        if key == "colorblind":
+            ui.apply_palette(settings.get()["colorblind"])
+
+    def reset_hints(self):
+        progress.data()["hints"] = []
+        progress.save()
+        self.game.toast("Tips will show again.", (150, 210, 255))
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.game.change(TitleScene(self.game))
+            return True
+        return super().handle(ev)
+
+    def draw(self, s):
+        s.fill(ui.BG)
+        text(s, "Settings", (W // 2, 70), 44, ui.GOLD, True, center=True)
+        st = settings.get()
+        panel(s, pygame.Rect(W // 2 - 360, 136, 720, 6 * 64 + 20))
+        for i, (key, label) in enumerate(self.ROWS):
+            y = 160 + i * 64
+            text(s, label, (W // 2 - 330, y + 10), 20, ui.TEXT, True)
+            if key in ("music", "sfx"):
+                ui.bar(s, (W // 2 + 100, y + 14, 130, 16), st[key], ui.GOLD)
+                text(s, f"{int(st[key] * 100)}%", (W // 2 + 300, y + 10), 18, ui.DIM, True)
+        for b in self.row_btns:
+            if b.label.endswith("x"):
+                b.col = (80, 70, 40) if st["speed"] == int(b.label[0]) else ui.PANEL2
+        bi = 0
+        for key, _ in self.ROWS:
+            if key in ("music", "sfx"):
+                bi += 2
+            elif key == "speed":
+                bi += 3
+            else:
+                b = self.row_btns[bi]
+                b.label = "On" if st[key] else "Off"
+                b.col = (50, 80, 50) if st[key] else ui.PANEL2
+                bi += 1
+        text(s, "Colour-blind palette: heals become blue, poison purple, damage vermillion.", (W // 2 - 330, 556),
+             14, ui.DIM)
+        self.draw_buttons(s)
+
+
+# =================================================================== achievements & stats
+class AchievementsScene(Scene):
+    music = "title"
+
+    def __init__(self, game):
+        super().__init__(game)
+        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)]
+        self.stats = progress.lifetime_stats(history.load_history(), history.load_arena())
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.game.change(TitleScene(self.game))
+            return True
+        return super().handle(ev)
+
+    def draw(self, s):
+        s.fill(ui.BG)
+        n = sum(1 for a in progress.ACHIEVEMENTS if progress.unlocked(a[0]))
+        text(s, "Achievements", (24, 16), 34, ui.GOLD, True)
+        text(s, f"{n} / {len(progress.ACHIEVEMENTS)} unlocked", (290, 28), 18, ui.DIM, True)
+        cw, chh = 380, 64
+        for i, (aid, name, desc) in enumerate(progress.ACHIEVEMENTS):
+            col, row = i % 2, i // 2
+            r = pygame.Rect(24 + col * (cw + 12), 74 + row * (chh + 8), cw, chh)
+            got = progress.unlocked(aid)
+            panel(s, r, (52, 44, 28) if got else ui.PANEL, ui.GOLD if got else ui.LINE, radius=8)
+            pygame.draw.circle(s, ui.GOLD if got else (60, 56, 70), (r.x + 30, r.centery), 18)
+            text(s, "✓" if got and not ui.WEB else ("!" if got else "?"), (r.x + 30, r.centery), 18,
+                 (30, 24, 20) if got else ui.DIM, True, center=True)
+            text(s, name, (r.x + 60, r.y + 9), 17, ui.TEXT if got else ui.DIM, True)
+            text_block(s, desc, (r.x + 60, r.y + 33), cw - 70, 13, ui.DIM)
+        # lifetime stats
+        st = self.stats
+        sp = pygame.Rect(820, 74, W - 844, 568)
+        panel(s, sp)
+        x, y = sp.x + 18, sp.y + 14
+        text(s, "LIFETIME STATS", (x, y), 16, ui.GOLD, True)
+        y += 32
+        rows = [("Runs", st["runs"]), ("Story wins", st["wins"]), ("Enemies defeated", st["kills"]),
+                ("Bosses defeated", st["bosses"]), ("Deepest stage", st["deepest"] or "-"),
+                ("Arena runs", st["arena_runs"]), ("Best Arena run", f"{st['arena_best']} wins")]
+        for label, val in rows:
+            text(s, label, (x, y), 15, ui.DIM)
+            text(s, str(val), (sp.right - 18, y), 15, ui.TEXT, True, right=True)
+            y += 24
+        y += 10
+        text(s, "Most defeated", (x, y), 15, ui.GOLD, True)
+        y += 24
+        for eid, c in st["most_killed"][:4] or [("-", 0)]:
+            name = ENEMIES[eid]["name"].split(",")[0] if eid in ENEMIES else "-"
+            text(s, name, (x, y), 14, ui.TEXT)
+            text(s, f"x{c}" if c else "", (sp.right - 18, y), 14, ui.DIM, right=True)
+            y += 21
+        y += 8
+        text(s, "Your nemesis", (x, y), 15, (230, 130, 130), True)
+        y += 24
+        for eid, c in st["nemesis"][:2] or [("-", 0)]:
+            name = ENEMIES[eid]["name"].split(",")[0] if eid in ENEMIES else "-"
+            text(s, name, (x, y), 14, ui.TEXT)
+            text(s, f"killed you {c}x" if c else "", (sp.right - 18, y), 14, ui.DIM, right=True)
+            y += 21
+        y += 8
+        text(s, "Favourite items", (x, y), 15, (150, 230, 200), True)
+        y += 26
+        for k, (iid, c) in enumerate(st["favourite"][:6]):
+            pic = ui.art(iid, 30)
+            px = x + k * 64
+            if pic:
+                s.blit(pic, pic.get_rect(center=(px + 20, y + 16)))
+            text(s, f"x{c}", (px + 20, y + 36), 12, ui.DIM, center=True)
+        if not st["favourite"]:
+            text(s, "Finish a run to see them.", (x, y), 14, ui.DIM)
         self.draw_buttons(s)

@@ -1,4 +1,4 @@
-﻿"""The game's version, shown bottom-left on every screen and saved with each match-history run.
+"""The game's version, shown bottom-left on every screen and saved with each match-history run.
 
 How to bump it (edit VERSION below before you push):
   +0.01  hotfix / small change: a bug fix, or tweaked item or enemy numbers   (0.60 -> 0.61)
@@ -8,7 +8,7 @@ While BETA is True the game shows "Beta". When the first real season starts, set
 and VERSION = "1.00".
 """
 BETA = True
-VERSION = "0.70"
+VERSION = "0.80"
 
 
 def label():

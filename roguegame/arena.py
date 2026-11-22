@@ -139,14 +139,17 @@ def bot_record(char_id, rnd, seed):
         start_round(run)
         if wants_technique(run):
             run.learn(rng.choice(run.technique_choices()))
+        # bots walk the floor too: a reward item (shrine or won fight) and one other node
+        run.add_item(max(run.reward_choices("fight"), key=lambda o: _bot_score(run, o, rng)))
+        resolve_floor(run, rng.choice(("forge", "bounty", "dojo")))
         for shop in range(2):                        # look at the shop, maybe reroll once
             offers = run.shop_offers()
             while True:
-                afford = [o for o in offers if ITEMS[o]["price"] <= run.gold]
+                afford = [o for o in offers if run.price(o) <= run.gold]
                 if not afford:
                     break
                 pick = max(afford, key=lambda o: _bot_score(run, o, rng))
-                run.gold -= ITEMS[pick]["price"]
+                run.gold -= run.price(pick)
                 run.add_item(pick)
                 offers.remove(pick)
             if run.gold < 2:
@@ -175,3 +178,75 @@ def score_record(run, profile):
     a = run.arena
     return dict(player=profile["id"], name=profile["name"], cls=run.char_id, wins=a["wins"],
                 hearts=HEARTS - a["losses"], rounds=a["round"], version=VERSION)
+
+
+# ---------------------------------------------------------------- the floor before each duel
+FLOOR_KINDS = ("treasure", "event", "forge", "bounty", "dojo")
+# events that make sense in the Arena (no fights, no max-HP changes that the round would overwrite)
+FLOOR_EVENTS = ("monk", "smith", "tea_house", "caravan", "well", "forgetful_monk", "high_stakes",
+                "veiled_merchant")
+
+
+def floor_choices(run):
+    """Three different nodes for this round (fixed per round, so leaving and coming back can't reroll)."""
+    a = run.arena
+    if a.get("floor_round") != a["round"]:
+        rng = random.Random(f"{run.seed}:floor:{a['round']}")
+        a["floor"] = rng.sample(FLOOR_KINDS, 3)
+        a["floor_round"] = a["round"]
+    return list(a["floor"])
+
+
+def bounty(rnd):
+    return 4 + rnd // 2
+
+
+def resolve_floor(run, kind):
+    """Apply a forge / bounty / dojo node. Returns a short message (shrine and event open their own screen)."""
+    a = run.arena
+    if kind == "forge":
+        it = run.upgrade_random(run.rng)
+        return f"Forge: your {it.data['name']} is now level {it.level}!" if it else "Forge: nothing left to improve."
+    if kind == "bounty":
+        g = bounty(a["round"])
+        run.gold += g
+        return f"Bounty collected: +{g} ryō."
+    if kind == "dojo":
+        a["base_hp"] += 4
+        run.max_hp += 4
+        run.hp = run.max_hp
+        return "Dojo training: +4 max HP for the rest of this Arena run."
+    return ""
+
+
+def pick_floor_event(run):
+    from .events import EVENT_BY_ID
+    return EVENT_BY_ID[run.rng.choice(FLOOR_EVENTS)]
+
+
+def gen_floor(run):
+    """A short random floor for this round: two rows of nodes, a merchant, then the ghost duel.
+    Uses the run's map fields, so the normal map screen draws it."""
+    rng = run.rng
+    pool = ["fight"] * 5 + ["elite"] * 2 + ["treasure"] * 2 + ["event"] * 2 + ["forge", "bounty", "dojo"]
+    rows = []
+    for r in range(2):
+        n = rng.choice([2, 3, 3])
+        kinds = [rng.choice(pool) for _ in range(n)]
+        if r == 0 and "fight" not in kinds:
+            kinds[rng.randrange(n)] = "fight"
+        rows.append([dict(row=r, col=c, kind=k, x=(c + 0.5) / n, links=[]) for c, k in enumerate(kinds)])
+    rows.append([dict(row=2, col=0, kind="shop", x=0.5, links=[])])
+    rows.append([dict(row=3, col=0, kind="boss", x=0.5, links=[])])
+    for r in range(len(rows) - 1):
+        cur, nxt = rows[r], rows[r + 1]
+        for node in cur:
+            near = [j for j, m in enumerate(nxt) if abs(m["x"] - node["x"]) <= 0.4]
+            node["links"] = near or [min(range(len(nxt)), key=lambda j: abs(nxt[j]["x"] - node["x"]))]
+        for j, m in enumerate(nxt):
+            if not any(j in nd["links"] for nd in cur):
+                min(cur, key=lambda nd: abs(nd["x"] - m["x"]))["links"].append(j)
+    run.map = rows
+    run.pos = None
+    run.ensure_stage(run.stage)
+    return rows

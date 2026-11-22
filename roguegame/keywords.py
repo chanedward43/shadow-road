@@ -30,6 +30,8 @@ KEYWORDS = {
                                              "Without enough, a weapon waits."),
 }
 
+BASE_COLOURS = {k: v[1] for k, v in KEYWORDS.items()}   # ui.apply_palette swaps some for colour-blind mode
+
 # words (lower case, punctuation stripped) that mean each keyword
 ALIASES = {
     "block": "block", "poison": "poison", "burn": "burn", "regen": "regen", "heal": "heal", "heals": "heal",

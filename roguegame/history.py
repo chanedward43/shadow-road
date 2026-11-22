@@ -22,6 +22,7 @@ def record_from_run(run, won):
         v=HISTORY_VERSION,
         game=label(),
         mode=getattr(run, "mode", "story"),
+        asc=getattr(run, "asc", 0),
         date=time.time(),
         char=run.char_id,
         won=bool(won),

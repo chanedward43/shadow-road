@@ -230,7 +230,8 @@ EVENT_BY_ID = {e["id"]: e for e in EVENTS}
 
 def pick_event(run):
     """Seeded choice of an event this run hasn't seen yet."""
-    pool = [e for e in EVENTS if e["id"] not in run.seen_events] or EVENTS
+    fits = [e for e in EVENTS if run.stage in e.get("stages", (run.stage,))]
+    pool = [e for e in fits if e["id"] not in run.seen_events] or fits
     ev = run.rng.choice(pool)
     run.seen_events.append(ev["id"])
     return ev
@@ -243,3 +244,202 @@ def options_for(run, ev):
 
 def resolve(run, ev, idx):
     return ev["options"][idx]["do"](run, run.rng)
+
+
+# ================================================================ v8: RISK / REWARD and MULTI-STAGE events
+def blood_pact(run, rng):
+    loss = max(1, int(run.max_hp * 0.15))
+    run.max_hp = max(10, run.max_hp - loss)
+    run.hp = min(run.hp, run.max_hp)
+    return dict(text=f"The oni carves its mark into your arm (-{loss} Max HP). Its hoard is yours: pick one.",
+                choose=run.reward_choices("boss"))
+
+
+def blood_pact_hp(run, rng):
+    dmg = _hurt(run, _hp(run, 0.3))
+    return dict(text=f"You bleed for the oni (-{dmg} HP). It tosses you a heavy pouch: +25 ryō.", gold=_add_gold(run, 25))
+
+
+def _add_gold(run, n):
+    run.gold += n
+    return n
+
+
+def champion_fight(run, rng):
+    eid = run.boss_of.get(max(1, run.stage - 1)) if run.stage > 1 else rng.choice(STAGES[1]["elites"])
+    run.flags["champion_bounty"] = True
+    return dict(text="The spirit of a fallen champion takes shape. Beat it and its legendary weapon is yours.",
+                battle=(eid if eid else "ronin_duelist", "elite"), legendary=True)
+
+
+def forget_technique(run, rng):
+    if not run.techniques:
+        return dict(text="'Your mind is already empty,' the monk laughs. 'I can buy nothing from you.'")
+    tid = run.techniques.pop(rng.randrange(len(run.techniques)))
+    bonus = TECHNIQUES[tid].get("max_hp", 0)
+    run.max_hp -= bonus
+    run.hp = min(run.hp, run.max_hp)
+    run.gold += 40
+    return dict(text=f"You let go of {TECHNIQUES[tid]['name']}. The monk presses 40 ryō into your hand.")
+
+
+def dice_all_in(run, rng):
+    bet = run.gold
+    if rng.random() < 0.5:
+        run.gold += bet
+        return dict(text=f"Double! You walk out with {run.gold} ryō.")
+    run.gold = 0
+    return dict(text=f"The dice betray you. You lose all {bet} ryō.")
+
+
+def merchant_gamble(run, rng):
+    run.gold -= 15
+    if rng.random() < 0.4:
+        pool = [i for i in ITEMS.values() if not i["enemy"] and not i.get("loot") and i["rarity"] == "legendary"
+                and i["cls"] in (None, run.char_id) and i["id"] not in run.owned_ids()]
+        if pool:
+            iid = rng.choice(pool)["id"]
+            ok = run.add_item(iid)
+            return dict(text=f"The cloth falls away: {ITEMS[iid]['name']}, a legendary!" +
+                        ("" if ok else " (No room to carry it.)"))
+    return dict(text="The cloth falls away: a painted rock. The merchant is already gone.")
+
+
+# ---- multi-stage: the choice here changes what waits for you on the NEXT stage's map (an Omen node)
+def tanuki_free(run, rng):
+    dmg = _hurt(run, 4)
+    run.flags["tanuki"] = "helped"
+    return dict(text=f"You pry the trap open (-{dmg} HP). The tanuki looks back at you before it vanishes. "
+                     "Something tells you you'll meet again...")
+
+
+def tanuki_rob(run, rng):
+    run.gold += 10
+    run.flags["tanuki"] = "robbed"
+    return dict(text="You take the gold coins tied to its tail (+10 ryō). It glares at you as you leave. "
+                     "The forest will remember.")
+
+
+def ronin_help(run, rng):
+    run.gold -= 8
+    run.flags["ronin"] = "saved"
+    return dict(text="You pay a doctor to tend his wounds. 'I am Kagemaru,' he says. 'I will repay this debt.'")
+
+
+def ronin_rob(run, rng):
+    weapons = [i for i in ITEMS.values() if "weapon" in i["tags"] and not i["enemy"] and not i.get("loot")
+               and i["cls"] in (None, run.char_id) and i["rarity"] == "epic"]
+    iid = rng.choice(weapons)["id"]
+    ok = run.add_item(iid)
+    run.flags["ronin"] = "robbed"
+    return dict(text=f"You take his {ITEMS[iid]['name']}. He curses your name as you walk away."
+                + ("" if ok else " (No room to carry it.)"))
+
+
+def leave_flag(key, value):
+    def do(run, rng):
+        run.flags[key] = value
+        return dict(text="You continue down the road.")
+    return do
+
+
+NEW_EVENTS = [
+    dict(id="blood_pact", title="The Oni's Bargain", art="oni", new=True,
+         text="A grinning oni sits on a chest of plunder. 'Blood for gold, little warrior. Or blood for glory.'",
+         options=[dict(label="Give your vigour (-15% Max HP, pick a legendary-tier item)", do=blood_pact),
+                  dict(label="Bleed for it (-30% HP, +25 ryō)", do=blood_pact_hp),
+                  dict(label="Leave", do=leave)]),
+    dict(id="champion", title="The Champion's Grave", art="ronin_duelist", new=True,
+         text="A sword stands in a burial mound. As you approach, a spectral warrior rises to guard it.",
+         options=[dict(label="Fight the champion (hard elite fight, win a LEGENDARY)", do=champion_fight),
+                  dict(label="Pay respects and leave", do=leave)]),
+    dict(id="forgetful_monk", title="The Monk of Empty Mind", art="rogue_monk", new=True,
+         text="'Knowledge is a heavy pack,' the monk says. 'I will buy what you carry in your head.'",
+         options=[dict(label="Forget a random technique for 40 ryō", cond=lambda r: bool(r.techniques),
+                       do=forget_technique),
+                  dict(label="Leave", do=leave)]),
+    dict(id="high_stakes", title="High-Stakes Dice", art="poison_tea", new=True,
+         text="Yakuza gamblers wave you to their table. 'One throw. Double or nothing.'",
+         options=[dict(label="Bet everything (50%: double your ryō, 50%: lose it all)",
+                       cond=lambda r: r.gold >= 10, do=dice_all_in),
+                  dict(label="Leave", do=leave)]),
+    dict(id="veiled_merchant", title="The Veiled Merchant", art="map_shop", new=True,
+         text="A merchant offers something under a silk cloth. 'Fifteen ryō. No refunds.'",
+         options=[dict(label="Pay 15 ryō (40%: a legendary item, 60%: nothing)", cond=_gold(15),
+                       do=merchant_gamble),
+                  dict(label="Leave", do=leave)]),
+    dict(id="tanuki_trap", title="A Tanuki in a Trap", art="tanuki", new=True, stages=(1,),
+         text="A tanuki is caught in a hunter's trap. Gold coins are tied to its tail. It whimpers at you.",
+         options=[dict(label="Free it (-4 HP). It may remember you...", do=tanuki_free),
+                  dict(label="Take its coins (+10 ryō). It will remember you...", do=tanuki_rob),
+                  dict(label="Leave it", do=leave_flag("tanuki", "ignored"))]),
+    dict(id="wounded_ronin", title="The Wounded Rōnin", art="possessed", new=True, stages=(2,),
+         text="A rōnin lies bleeding against a pine tree, his fine sword beside him.",
+         options=[dict(label="Pay 8 ryō for a doctor. He may repay you...", cond=_gold(8), do=ronin_help),
+                  dict(label="Take his sword (epic weapon now). He may come for you...", do=ronin_rob),
+                  dict(label="Leave him", do=leave_flag("ronin", "ignored"))]),
+]
+for _e in NEW_EVENTS:
+    EVENTS.append(_e)
+EVENT_BY_ID.update({e["id"]: e for e in NEW_EVENTS})
+
+
+# ---- Omens: the follow-ups, placed as a special node on the next stage's map
+def omen_tanuki_gift(run, rng):
+    run.gold += 12
+    return dict(text="The tanuki you freed returns with its whole clan, bowing low. They give you 12 ryō and "
+                     "a treasure from their hidden den. Pick one.", choose=run.reward_choices("boss"))
+
+
+def omen_tanuki_revenge(run, rng):
+    return dict(text="Leaves swirl into shapes... the tanuki you robbed has brought its clan. Ambush!",
+                battle=("tanuki", "elite"))
+
+
+def omen_ronin_gift(run, rng):
+    lvl = 2
+    run.add_item("ronin_blade", level=lvl)
+    heal = _heal(run, 0.3)
+    return dict(text=f"Kagemaru, the rōnin you saved, waits by the road. He hands you his last blade "
+                     f"(level {lvl}) and treats your wounds (+{heal} HP). 'My debt is paid.'")
+
+
+def omen_ronin_revenge(run, rng):
+    return dict(text="A familiar voice: 'You took my sword. Now I take your life.' The rōnin draws!",
+                battle=("ronin_duelist", "elite"))
+
+
+OMENS = {
+    "tanuki": dict(stage=2, art="tanuki", outcomes={
+        "helped": dict(title="The Tanuki's Gratitude", text="Paw prints lead to a pile of gifts...",
+                       label="Accept their gifts", do=omen_tanuki_gift),
+        "robbed": dict(title="The Tanuki's Revenge", text="The trees whisper with laughter. You are not alone.",
+                       label="Face them (elite fight)", do=omen_tanuki_revenge)}),
+    "ronin": dict(stage=3, art="possessed", outcomes={
+        "saved": dict(title="Kagemaru's Debt", text="A rōnin stands waiting in the road. You know that face.",
+                      label="Greet him", do=omen_ronin_gift),
+        "robbed": dict(title="The Rōnin's Vengeance", text="A rōnin stands waiting in the road. You know that "
+                                                           "face, and the hatred in it.",
+                       label="Draw your weapon (elite fight)", do=omen_ronin_revenge)}),
+}
+
+
+def place_omens(run):
+    """Called when a stage starts: turn one map node into an Omen for every pending story thread."""
+    for key, om in OMENS.items():
+        state = run.flags.get(key)
+        if om["stage"] != run.stage or state not in om["outcomes"] or run.flags.get(key + "_done"):
+            continue
+        rows = [n for r in run.map[2:5] for n in r if n["kind"] not in ("boss", "omen")]
+        if rows:
+            node = run.rng.choice(rows)
+            node["kind"] = "omen"
+            node["omen"] = key
+
+
+def omen_event(run, key):
+    om = OMENS[key]
+    out = om["outcomes"][run.flags[key]]
+    run.flags[key + "_done"] = True
+    return dict(id=f"omen_{key}", title=out["title"], art=om["art"], text=out["text"], new=True,
+                options=[dict(label=out["label"], do=out["do"])])

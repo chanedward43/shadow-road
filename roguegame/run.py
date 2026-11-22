@@ -9,7 +9,8 @@ import time
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
                    TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL,
-                   SIGNATURE_DROP_CHANCE, enemy_tier, endless_mult, BLOOD_MOON_STAGE)
+                   SIGNATURE_DROP_CHANCE, enemy_tier, endless_mult, BLOOD_MOON_STAGE, CONSUMABLES,
+                   MAX_CONSUMABLES)
 from .inventory import Grid, ItemInst
 
 MAP_ROWS = 6
@@ -67,13 +68,18 @@ def fresh_seed(extra=0):
 
 
 class RunState:
-    def __init__(self, char_id, seed=None, mode="story"):
+    def __init__(self, char_id, seed=None, mode="story", asc=0):
         self.mode = mode         # "story" (3 stages) or "endless" (keeps going after stage 3)
+        self.asc = asc           # ascension level (0 = normal), see ASCENSION in data.py
+        self.consumables = []    # used up in the next battle
+        self.flags = {}          # multi-stage event state, e.g. {"tanuki": "helped"}
         self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
         ch = CHARACTERS[char_id]
         self.max_hp = int(round(ch["hp"] * BALANCE.get("class_hp", {}).get(char_id, 1.0)))
+        if asc >= 4:                                     # A4: weary traveller
+            self.max_hp = int(self.max_hp * 0.9)
         self.hp = self.max_hp
         self.gold = START_GOLD
         self.bag = Grid(*BAG_SIZE)
@@ -121,6 +127,12 @@ class RunState:
             mult = BALANCE["stage_mult"].get(self.stage, 1.0)
         mult *= {"fight": BALANCE["fight_mult"], "elite": BALANCE["elite_mult"],
                  "boss": BALANCE["boss_mult"]}.get(kind, BALANCE["fight_mult"])
+        if self.asc >= 1 and kind == "elite":
+            mult *= 1.15
+        if self.asc >= 3 and kind == "boss":
+            mult *= 1.15
+        if self.asc >= 7 and kind == "fight":
+            mult *= 1.10
         if kind == "boss" or self.pos is None:
             return mult
         return mult * (1.0 + ROW_SCALING * self.pos[0])
@@ -177,10 +189,13 @@ class RunState:
             self.hp += gain
         self.map = gen_map(self.rng, self.stage)
         self.pos = None
+        from .events import place_omens
+        place_omens(self)                                # earlier choices come back as Omen nodes
         self.hp = min(self.max_hp, self.hp + int(self.max_hp * 0.3))
 
     def rest(self):
-        self.hp = min(self.max_hp, self.hp + int(self.max_hp * REST_HEAL))
+        frac = 0.2 if self.asc >= 6 else REST_HEAL
+        self.hp = min(self.max_hp, self.hp + int(self.max_hp * frac))
 
     def train(self):
         self.max_hp += 5
@@ -243,6 +258,8 @@ class RunState:
     def gold_reward(self, kind):
         lo, hi = GOLD_REWARD.get(kind, GOLD_REWARD["fight"])
         g = self.rng.randint(lo, hi)
+        if self.asc >= 9:
+            g = int(g * 0.75)
         self.gold += g
         self.gold_earned += g
         return g
@@ -309,3 +326,53 @@ class RunState:
         """Serializable build - the future 'ghost' uploaded for async PvP."""
         return dict(char=self.char_id, max_hp=self.max_hp, stage=self.stage, seed=self.seed,
                     techniques=list(self.techniques), bag=self.bag.to_dict())
+
+    # ---------------- shop prices, economy items, consumables
+    def discount(self):
+        return min(0.3, sum(i.data.get("discount", 0) for i in self.bag.items))
+
+    def price(self, iid):
+        p = ITEMS[iid]["price"] if iid in ITEMS else CONSUMABLES[iid]["price"]
+        mult = (1.2 if self.asc >= 2 else 1.0) * (1 - self.discount())
+        return max(1, int(round(p * mult)))
+
+    @property
+    def blood_moon_now(self):
+        return self.stage >= BLOOD_MOON_STAGE or (self.asc >= 10 and self.stage >= 3)
+
+    def legendary_choices(self, n=3):
+        pool = [i["id"] for i in self.item_pool("legendary")]
+        return self.rng.sample(pool, min(n, len(pool))) if pool else self.reward_choices("boss")
+
+    def shop_consumables(self, n=2):
+        return self.rng.sample(sorted(CONSUMABLES), n)
+
+    def add_consumable(self, cid):
+        if len(self.consumables) >= MAX_CONSUMABLES:
+            return False
+        self.consumables.append(cid)
+        return True
+
+    def after_battle(self, won, kind):
+        """Called once after every battle: economy items pay out, consumables are used up.
+        Returns a list of (ryō, reason) for what paid out."""
+        paid = []
+        if won:
+            for inst in self.bag.items:
+                d = inst.data
+                if d.get("gold_per_win"):
+                    paid.append((d["gold_per_win"], d["name"]))
+                if d.get("interest"):
+                    g = min(5, self.gold * d["interest"] // 100)
+                    if g:
+                        paid.append((g, d["name"]))
+                if d.get("gold_per_boss") and kind == "boss":
+                    paid.append((d["gold_per_boss"], d["name"]))
+            for cid in self.consumables:
+                if CONSUMABLES[cid].get("win_gold"):
+                    paid.append((CONSUMABLES[cid]["win_gold"], CONSUMABLES[cid]["name"]))
+        for g, _ in paid:
+            self.gold += g
+            self.gold_earned += g
+        self.consumables = []
+        return paid

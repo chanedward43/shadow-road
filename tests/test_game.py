@@ -637,6 +637,137 @@ def TECHNIQUES_ENDLESS(tid):
     return bool(data.TECHNIQUES[tid].get("endless"))
 
 
+class TestV8Systems(unittest.TestCase):
+    def bag(self, cls, placed, seed=1):
+        r = RunState(cls, seed)
+        r.bag.items, r.stash.items = [], []
+        for iid, x, y in placed:
+            self.assertTrue(r.bag.place(ItemInst(iid), x, y), iid)
+        return r
+
+    def uses(self, b, iid):
+        return sum(ci.stats.get("uses", 0) for ci in b.f[0].items if ci.st["id"] == iid)
+
+    def test_adjacent_crit_trigger(self):
+        r = self.bag("ninja", [("kunai", 0, 0), ("echo_blade", 1, 0)])
+        b = make_battle(r, "kurogane", 1.0, seed=2)
+        for f in b.f:
+            f.hp = f.max_hp = 10 ** 6
+        b.f[0].crit = 0.5
+        b.advance(20)
+        crits = sum(ci.stats.get("crits", 0) for ci in b.f[0].items if ci.st["id"] == "kunai")
+        self.assertGreater(crits, 0)
+        self.assertGreater(self.uses(b, "echo_blade"), 0, "fires when the adjacent kunai crits")
+        far = self.bag("ninja", [("kunai", 0, 0), ("echo_blade", 5, 0)])
+        b2 = make_battle(far, "kurogane", 1.0, seed=2)
+        for f in b2.f:
+            f.hp = f.max_hp = 10 ** 6
+        b2.f[0].crit = 0.5
+        b2.advance(20)
+        self.assertEqual(self.uses(b2, "echo_blade"), 0, "not adjacent: never fires")
+
+    def test_count_triggers(self):
+        r = self.bag("samurai", [("tetsubo", 0, 0), ("ofuda", 3, 0), ("wara_doll", 5, 0)])
+        b = make_battle(r, "kurogane", 1.0, seed=3)
+        for f in b.f:
+            f.hp = f.max_hp = 10 ** 6
+        b.advance(30)
+        me = b.f[0]
+        self.assertEqual(self.uses(b, "tetsubo"), me.block_gains // 5)
+        self.assertEqual(self.uses(b, "wara_doll"), me.hits_taken // 6)
+
+    def test_alone_bonus(self):
+        alone = effective_stats(self.bag("samurai", [("lone_tanto", 0, 0)]).bag, "samurai")
+        crowd = effective_stats(self.bag("samurai", [("lone_tanto", 0, 0), ("onigiri", 1, 0)]).bag, "samurai")
+        a = next(st for st in alone.values() if st["id"] == "lone_tanto")["dmg"][0]
+        c = next(st for st in crowd.values() if st["id"] == "lone_tanto")["dmg"][0]
+        self.assertEqual(a - c, 5)
+
+    def test_economy_and_consumables(self):
+        r = self.bag("kunoichi", [("maneki_neko", 0, 0), ("coin_purse", 1, 0), ("soroban", 2, 0)])
+        r.gold = 30
+        self.assertLess(r.price("katana"), data.ITEMS["katana"]["price"] + 1)
+        self.assertTrue(r.add_consumable("omikuji"))
+        paid = r.after_battle(True, "fight")
+        self.assertEqual(sum(g for g, _ in paid), 2 + 3 + 10)
+        self.assertEqual(r.consumables, [], "consumables are used up")
+        r.consumables = ["iron_elixir", "explosive_tag", "antidote"]
+        self.assertFalse(r.add_consumable("tonic"), "max 3")
+        b = make_battle(r, "kappa", 1.0, seed=1)
+        self.assertGreaterEqual(b.f[0].block, 30)
+        self.assertEqual(b.f[1].burn, 8)
+        self.assertTrue(b.f[0].poison_immune)
+        self.assertEqual(r.after_battle(False, "fight"), [], "no payout when you lose")
+
+    def test_ascension(self):
+        base, hard = RunState("sohei", 4), RunState("sohei", 4, asc=10)
+        self.assertLess(hard.max_hp, base.max_hp)
+        self.assertGreater(hard.price("katana"), base.price("katana"))
+        for kind in ("fight", "elite", "boss"):
+            self.assertGreater(hard.enemy_scale(kind), base.enemy_scale(kind) - 1e-9)
+        hard.stage = 3
+        self.assertTrue(hard.blood_moon_now)
+        b = make_battle(hard, "ashura", 1.0, seed=1)
+        self.assertEqual(len(b.f[1].phases), len(data.ENEMIES["ashura"]["phases"]) + 1, "A8: extra phase")
+        save.save_run(hard)
+        self.assertEqual(save.load_run().asc, 10)
+        save.clear_run()
+
+    def test_omens_follow_you_to_the_next_stage(self):
+        from roguegame.events import EVENT_BY_ID, resolve, omen_event
+        r = RunState("ninja", 12)
+        res = resolve(r, EVENT_BY_ID["tanuki_trap"], 1)
+        self.assertEqual(r.flags["tanuki"], "robbed")
+        r.next_stage()
+        omens = [n for row in r.map for n in row if n["kind"] == "omen"]
+        self.assertEqual(len(omens), 1, "one Omen node on the stage-2 map")
+        ev = omen_event(r, "tanuki")
+        self.assertIn("battle", ev["options"][0]["do"](r, r.rng))
+        r2 = RunState("ninja", 12)
+        resolve(r2, EVENT_BY_ID["tanuki_trap"], 0)
+        r2.next_stage()
+        got = omen_event(r2, "tanuki")["options"][0]["do"](r2, r2.rng)
+        self.assertIn("choose", got)
+        self.assertTrue(res["text"])
+
+    def test_progress_and_unlocks(self):
+        from roguegame import progress, storage
+        storage.delete(progress.KEY)
+        progress.reset_cache()
+        r = RunState("samurai", 5)
+        self.assertEqual(progress.asc_unlocked("samurai"), 0)
+        got = progress.on_run_end(r, cleared=True)
+        self.assertEqual(progress.asc_unlocked("samurai"), 1)
+        self.assertIn("story_win", [a[0] for a in got])
+        self.assertTrue(progress.hint_once("x"))
+        self.assertFalse(progress.hint_once("x"))
+        storage.delete(progress.KEY)
+        progress.reset_cache()
+
+    def test_arena_floor(self):
+        from roguegame import arena
+        run = arena.new_run("ninja", 8)
+        arena.start_round(run)
+        rows = arena.gen_floor(run)
+        self.assertEqual([n["kind"] for n in rows[-2]], ["shop"], "a merchant before the duel")
+        self.assertEqual([n["kind"] for n in rows[-1]], ["boss"], "the floor ends in the ghost duel")
+        self.assertIn("fight", [n["kind"] for n in rows[0]])
+        for r in range(len(rows) - 1):
+            for n in rows[r]:
+                self.assertTrue(n["links"], "every node leads on")
+        hp = run.arena["base_hp"]
+        arena.resolve_floor(run, "dojo")
+        self.assertEqual(run.arena["base_hp"], hp + 4)
+        g0 = run.gold
+        arena.resolve_floor(run, "bounty")
+        self.assertGreater(run.gold, g0)
+
+    def test_story_sims_still_work(self):
+        for s in range(6):
+            out = play("samurai", s, RandomPolicy(random.Random(s)))
+            self.assertIn(out["stage"], (1, 2, 3))
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame
@@ -649,7 +780,7 @@ class TestScreens(unittest.TestCase):
                    scenes.TechniqueScene(g, then=lambda: None), scenes.RestScene(g),
                    scenes.EventScene(g, EVENTS[0]), scenes.BattleScene(g, "ashura", "boss"), scenes.EndScene(g, True),
                    scenes.MatchHistoryScene(g), scenes.MatchHistoryScene(g, tab="arena"),
-                   scenes.ArenaLobbyScene(g)]
+                   scenes.ArenaLobbyScene(g), scenes.SettingsScene(g), scenes.AchievementsScene(g)]
         for sc in screens:
             with self.subTest(screen=type(sc).__name__):
                 g.change(sc)

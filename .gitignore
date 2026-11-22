@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+had/
+had.zip
+*.zip
+web_build/
+.claude/
+assets/icons/

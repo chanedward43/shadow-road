@@ -1,0 +1,738 @@
+{
+  "samurai": {
+    "icon": "delapouite/samurai-helmet",
+    "alt": "cathelineau/swordman",
+    "role": "class",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/samurai-helmet.png",
+    "page": "https://game-icons.net/1x1/delapouite/samurai-helmet.html",
+    "file": "icons/samurai.png"
+  },
+  "ninja": {
+    "icon": "darkzaitzev/ninja-head",
+    "alt": "darkzaitzev/ninja-heroic-stance",
+    "role": "class",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/darkzaitzev/ninja-head.png",
+    "page": "https://game-icons.net/1x1/darkzaitzev/ninja-head.html",
+    "file": "icons/ninja.png"
+  },
+  "kunoichi": {
+    "icon": "cathelineau/swordwoman",
+    "alt": "darkzaitzev/hooded-assassin",
+    "role": "class",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/cathelineau/swordwoman.png",
+    "page": "https://game-icons.net/1x1/cathelineau/swordwoman.html",
+    "file": "icons/kunoichi.png"
+  },
+  "kurogane": {
+    "icon": "caro-asercion/warlord-helmet",
+    "alt": "delapouite/overlord-helm",
+    "role": "boss",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/caro-asercion/warlord-helmet.png",
+    "page": "https://game-icons.net/1x1/caro-asercion/warlord-helmet.html",
+    "file": "icons/kurogane.png"
+  },
+  "kiyohime": {
+    "icon": "lorc/sea-serpent",
+    "alt": "lorc/dragon-spiral",
+    "role": "boss",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/sea-serpent.png",
+    "page": "https://game-icons.net/1x1/lorc/sea-serpent.html",
+    "file": "icons/kiyohime.png"
+  },
+  "ashura": {
+    "icon": "lorc/master-of-arms",
+    "alt": "lorc/daemon-skull",
+    "role": "boss",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/master-of-arms.png",
+    "page": "https://game-icons.net/1x1/lorc/master-of-arms.html",
+    "file": "icons/ashura.png"
+  },
+  "ronin_duelist": {
+    "icon": "lorc/sword-clash",
+    "alt": null,
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/sword-clash.png",
+    "page": "https://game-icons.net/1x1/lorc/sword-clash.html",
+    "file": "icons/ronin_duelist.png"
+  },
+  "kamaitachi": {
+    "icon": "lorc/whirlwind",
+    "alt": null,
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/whirlwind.png",
+    "page": "https://game-icons.net/1x1/lorc/whirlwind.html",
+    "file": "icons/kamaitachi.png"
+  },
+  "nue": {
+    "icon": "delapouite/saber-toothed-cat-head",
+    "alt": "lorc/thunder-struck",
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/saber-toothed-cat-head.png",
+    "page": "https://game-icons.net/1x1/delapouite/saber-toothed-cat-head.html",
+    "file": "icons/nue.png"
+  },
+  "rokurokubi": {
+    "icon": "delapouite/neck-bite",
+    "alt": null,
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/neck-bite.png",
+    "page": "https://game-icons.net/1x1/delapouite/neck-bite.html",
+    "file": "icons/rokurokubi.png"
+  },
+  "tengu_lord": {
+    "icon": "lorc/crow-dive",
+    "alt": null,
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/crow-dive.png",
+    "page": "https://game-icons.net/1x1/lorc/crow-dive.html",
+    "file": "icons/tengu_lord.png"
+  },
+  "hannya": {
+    "icon": "delapouite/devil-mask",
+    "alt": null,
+    "role": "elite",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/devil-mask.png",
+    "page": "https://game-icons.net/1x1/delapouite/devil-mask.html",
+    "file": "icons/hannya.png"
+  },
+  "bandit": {
+    "icon": "delapouite/bandit",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/bandit.png",
+    "page": "https://game-icons.net/1x1/delapouite/bandit.html",
+    "file": "icons/bandit.png"
+  },
+  "kappa": {
+    "icon": "lorc/frog",
+    "alt": "lorc/turtle",
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/frog.png",
+    "page": "https://game-icons.net/1x1/lorc/frog.html",
+    "file": "icons/kappa.png"
+  },
+  "tanuki": {
+    "icon": "delapouite/raccoon-head",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/raccoon-head.png",
+    "page": "https://game-icons.net/1x1/delapouite/raccoon-head.html",
+    "file": "icons/tanuki.png"
+  },
+  "ashigaru": {
+    "icon": "lorc/spears",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/spears.png",
+    "page": "https://game-icons.net/1x1/lorc/spears.html",
+    "file": "icons/ashigaru.png"
+  },
+  "kitsune": {
+    "icon": "lorc/fox-head",
+    "alt": "delapouite/fox-tail",
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/fox-head.png",
+    "page": "https://game-icons.net/1x1/lorc/fox-head.html",
+    "file": "icons/kitsune.png"
+  },
+  "jorogumo": {
+    "icon": "carl-olsen/spider-face",
+    "alt": "delapouite/spider-mask",
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/carl-olsen/spider-face.png",
+    "page": "https://game-icons.net/1x1/carl-olsen/spider-face.html",
+    "file": "icons/jorogumo.png"
+  },
+  "kodama": {
+    "icon": "cathelineau/tree-face",
+    "alt": "lorc/evil-tree",
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/cathelineau/tree-face.png",
+    "page": "https://game-icons.net/1x1/cathelineau/tree-face.html",
+    "file": "icons/kodama.png"
+  },
+  "karasu_tengu": {
+    "icon": "lorc/bird-mask",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/bird-mask.png",
+    "page": "https://game-icons.net/1x1/lorc/bird-mask.html",
+    "file": "icons/karasu_tengu.png"
+  },
+  "oni": {
+    "icon": "delapouite/oni",
+    "alt": "delapouite/giant",
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/oni.png",
+    "page": "https://game-icons.net/1x1/delapouite/oni.html",
+    "file": "icons/oni.png"
+  },
+  "gashadokuro": {
+    "icon": "lorc/dread-skull",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/dread-skull.png",
+    "page": "https://game-icons.net/1x1/lorc/dread-skull.html",
+    "file": "icons/gashadokuro.png"
+  },
+  "shadow_clan": {
+    "icon": "lorc/ninja-mask",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/ninja-mask.png",
+    "page": "https://game-icons.net/1x1/lorc/ninja-mask.html",
+    "file": "icons/shadow_clan.png"
+  },
+  "possessed": {
+    "icon": "lorc/cracked-helm",
+    "alt": null,
+    "role": "enemy",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/cracked-helm.png",
+    "page": "https://game-icons.net/1x1/lorc/cracked-helm.html",
+    "file": "icons/possessed.png"
+  },
+  "tanto": {
+    "icon": "lorc/plain-dagger",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/plain-dagger.png",
+    "page": "https://game-icons.net/1x1/lorc/plain-dagger.html",
+    "file": "icons/tanto.png"
+  },
+  "bo_staff": {
+    "icon": "lorc/wizard-staff",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/wizard-staff.png",
+    "page": "https://game-icons.net/1x1/lorc/wizard-staff.html",
+    "file": "icons/bo_staff.png"
+  },
+  "onigiri": {
+    "icon": "delapouite/onigori",
+    "alt": "caro-asercion/bowl-of-rice",
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/onigori.png",
+    "page": "https://game-icons.net/1x1/delapouite/onigori.html",
+    "file": "icons/onigiri.png"
+  },
+  "kasa_hat": {
+    "icon": "delapouite/skimmer-hat",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/skimmer-hat.png",
+    "page": "https://game-icons.net/1x1/delapouite/skimmer-hat.html",
+    "file": "icons/kasa_hat.png"
+  },
+  "whetstone": {
+    "icon": "lorc/sword-smithing",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/sword-smithing.png",
+    "page": "https://game-icons.net/1x1/lorc/sword-smithing.html",
+    "file": "icons/whetstone.png"
+  },
+  "ofuda": {
+    "icon": "lorc/folded-paper",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/folded-paper.png",
+    "page": "https://game-icons.net/1x1/lorc/folded-paper.html",
+    "file": "icons/ofuda.png"
+  },
+  "jitte": {
+    "icon": "delapouite/sai",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/sai.png",
+    "page": "https://game-icons.net/1x1/delapouite/sai.html",
+    "file": "icons/jitte.png"
+  },
+  "yumi": {
+    "icon": "delapouite/bow-arrow",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/bow-arrow.png",
+    "page": "https://game-icons.net/1x1/delapouite/bow-arrow.html",
+    "file": "icons/yumi.png"
+  },
+  "sake_gourd": {
+    "icon": "seregacthtuf/sake-bottle",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/seregacthtuf/sake-bottle.png",
+    "page": "https://game-icons.net/1x1/seregacthtuf/sake-bottle.html",
+    "file": "icons/sake_gourd.png"
+  },
+  "omamori": {
+    "icon": "lorc/charm",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/charm.png",
+    "page": "https://game-icons.net/1x1/lorc/charm.html",
+    "file": "icons/omamori.png"
+  },
+  "daruma": {
+    "icon": "lorc/meditation",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/meditation.png",
+    "page": "https://game-icons.net/1x1/lorc/meditation.html",
+    "file": "icons/daruma.png"
+  },
+  "iron_fan": {
+    "icon": "delapouite/handheld-fan",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/handheld-fan.png",
+    "page": "https://game-icons.net/1x1/delapouite/handheld-fan.html",
+    "file": "icons/iron_fan.png"
+  },
+  "incense": {
+    "icon": "lorc/incense",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/incense.png",
+    "page": "https://game-icons.net/1x1/lorc/incense.html",
+    "file": "icons/incense.png"
+  },
+  "kanabo": {
+    "icon": "skoll/spiked-bat",
+    "alt": "delapouite/wood-club",
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/skoll/spiked-bat.png",
+    "page": "https://game-icons.net/1x1/skoll/spiked-bat.html",
+    "file": "icons/kanabo.png"
+  },
+  "maneki": {
+    "icon": "lorc/cat",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/cat.png",
+    "page": "https://game-icons.net/1x1/lorc/cat.html",
+    "file": "icons/maneki.png"
+  },
+  "oni_mask": {
+    "icon": "lorc/totem-mask",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/totem-mask.png",
+    "page": "https://game-icons.net/1x1/lorc/totem-mask.html",
+    "file": "icons/oni_mask.png"
+  },
+  "kusanagi": {
+    "icon": "lorc/shining-sword",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/shining-sword.png",
+    "page": "https://game-icons.net/1x1/lorc/shining-sword.html",
+    "file": "icons/kusanagi.png"
+  },
+  "dragon_pearl": {
+    "icon": "delapouite/dragon-orb",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/dragon-orb.png",
+    "page": "https://game-icons.net/1x1/delapouite/dragon-orb.html",
+    "file": "icons/dragon_pearl.png"
+  },
+  "katana": {
+    "icon": "delapouite/katana",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/katana.png",
+    "page": "https://game-icons.net/1x1/delapouite/katana.html",
+    "file": "icons/katana.png"
+  },
+  "do_armor": {
+    "icon": "delapouite/chest-armor",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/chest-armor.png",
+    "page": "https://game-icons.net/1x1/delapouite/chest-armor.html",
+    "file": "icons/do_armor.png"
+  },
+  "wakizashi": {
+    "icon": "lorc/piercing-sword",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/piercing-sword.png",
+    "page": "https://game-icons.net/1x1/lorc/piercing-sword.html",
+    "file": "icons/wakizashi.png"
+  },
+  "kabuto": {
+    "icon": "lorc/crested-helmet",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/crested-helmet.png",
+    "page": "https://game-icons.net/1x1/lorc/crested-helmet.html",
+    "file": "icons/kabuto.png"
+  },
+  "war_banner": {
+    "icon": "delapouite/vertical-banner",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/vertical-banner.png",
+    "page": "https://game-icons.net/1x1/delapouite/vertical-banner.html",
+    "file": "icons/war_banner.png"
+  },
+  "naginata": {
+    "icon": "lorc/halberd",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/halberd.png",
+    "page": "https://game-icons.net/1x1/lorc/halberd.html",
+    "file": "icons/naginata.png"
+  },
+  "nodachi": {
+    "icon": "delapouite/two-handed-sword",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/two-handed-sword.png",
+    "page": "https://game-icons.net/1x1/delapouite/two-handed-sword.html",
+    "file": "icons/nodachi.png"
+  },
+  "o_yoroi": {
+    "icon": "lorc/layered-armor",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/layered-armor.png",
+    "page": "https://game-icons.net/1x1/lorc/layered-armor.html",
+    "file": "icons/o_yoroi.png"
+  },
+  "bushido_scroll": {
+    "icon": "lorc/scroll-unfurled",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/scroll-unfurled.png",
+    "page": "https://game-icons.net/1x1/lorc/scroll-unfurled.html",
+    "file": "icons/bushido_scroll.png"
+  },
+  "masamune": {
+    "icon": "delapouite/sword-brandish",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/sword-brandish.png",
+    "page": "https://game-icons.net/1x1/delapouite/sword-brandish.html",
+    "file": "icons/masamune.png"
+  },
+  "ninjato": {
+    "icon": "lorc/pointy-sword",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/pointy-sword.png",
+    "page": "https://game-icons.net/1x1/lorc/pointy-sword.html",
+    "file": "icons/ninjato.png"
+  },
+  "shuriken": {
+    "icon": "darkzaitzev/shuriken",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/darkzaitzev/shuriken.png",
+    "page": "https://game-icons.net/1x1/darkzaitzev/shuriken.html",
+    "file": "icons/shuriken.png"
+  },
+  "smoke_bomb": {
+    "icon": "darkzaitzev/smoke-bomb",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/darkzaitzev/smoke-bomb.png",
+    "page": "https://game-icons.net/1x1/darkzaitzev/smoke-bomb.html",
+    "file": "icons/smoke_bomb.png"
+  },
+  "kunai": {
+    "icon": "lorc/thrown-knife",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/thrown-knife.png",
+    "page": "https://game-icons.net/1x1/lorc/thrown-knife.html",
+    "file": "icons/kunai.png"
+  },
+  "makibishi": {
+    "icon": "delapouite/caltrops",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/caltrops.png",
+    "page": "https://game-icons.net/1x1/delapouite/caltrops.html",
+    "file": "icons/makibishi.png"
+  },
+  "fire_bomb": {
+    "icon": "lorc/fire-bomb",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/fire-bomb.png",
+    "page": "https://game-icons.net/1x1/lorc/fire-bomb.html",
+    "file": "icons/fire_bomb.png"
+  },
+  "tekko_kagi": {
+    "icon": "lorc/steel-claws",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/steel-claws.png",
+    "page": "https://game-icons.net/1x1/lorc/steel-claws.html",
+    "file": "icons/tekko_kagi.png"
+  },
+  "kaginawa": {
+    "icon": "lorc/grapple",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/grapple.png",
+    "page": "https://game-icons.net/1x1/lorc/grapple.html",
+    "file": "icons/kaginawa.png"
+  },
+  "kusarigama": {
+    "icon": "darkzaitzev/kusarigama",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/darkzaitzev/kusarigama.png",
+    "page": "https://game-icons.net/1x1/darkzaitzev/kusarigama.html",
+    "file": "icons/kusarigama.png"
+  },
+  "shadow_cloak": {
+    "icon": "lorc/cloak-dagger",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/cloak-dagger.png",
+    "page": "https://game-icons.net/1x1/lorc/cloak-dagger.html",
+    "file": "icons/shadow_cloak.png"
+  },
+  "fuma_shuriken": {
+    "icon": "darkzaitzev/whirlpool-shuriken",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/darkzaitzev/whirlpool-shuriken.png",
+    "page": "https://game-icons.net/1x1/darkzaitzev/whirlpool-shuriken.html",
+    "file": "icons/fuma_shuriken.png"
+  },
+  "kanzashi": {
+    "icon": "delapouite/dagger-rose",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/dagger-rose.png",
+    "page": "https://game-icons.net/1x1/delapouite/dagger-rose.html",
+    "file": "icons/kanzashi.png"
+  },
+  "poison_tea": {
+    "icon": "delapouite/teapot-leaves",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/teapot-leaves.png",
+    "page": "https://game-icons.net/1x1/delapouite/teapot-leaves.html",
+    "file": "icons/poison_tea.png"
+  },
+  "silk_veil": {
+    "icon": "lorc/hood",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/hood.png",
+    "page": "https://game-icons.net/1x1/lorc/hood.html",
+    "file": "icons/silk_veil.png"
+  },
+  "fukiya": {
+    "icon": "delapouite/dart",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/dart.png",
+    "page": "https://game-icons.net/1x1/delapouite/dart.html",
+    "file": "icons/fukiya.png"
+  },
+  "kaiken": {
+    "icon": "lorc/curvy-knife",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/curvy-knife.png",
+    "page": "https://game-icons.net/1x1/lorc/curvy-knife.html",
+    "file": "icons/kaiken.png"
+  },
+  "shamisen": {
+    "icon": "lorc/guitar",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/guitar.png",
+    "page": "https://game-icons.net/1x1/lorc/guitar.html",
+    "file": "icons/shamisen.png"
+  },
+  "sleep_powder": {
+    "icon": "delapouite/powder-bag",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/powder-bag.png",
+    "page": "https://game-icons.net/1x1/delapouite/powder-bag.html",
+    "file": "icons/sleep_powder.png"
+  },
+  "torikabuto": {
+    "icon": "delapouite/plant-roots",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/plant-roots.png",
+    "page": "https://game-icons.net/1x1/delapouite/plant-roots.html",
+    "file": "icons/torikabuto.png"
+  },
+  "noh_mask": {
+    "icon": "delapouite/ceremonial-mask",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/ceremonial-mask.png",
+    "page": "https://game-icons.net/1x1/delapouite/ceremonial-mask.html",
+    "file": "icons/noh_mask.png"
+  },
+  "garrote": {
+    "icon": "delapouite/rope-coil",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/rope-coil.png",
+    "page": "https://game-icons.net/1x1/delapouite/rope-coil.html",
+    "file": "icons/garrote.png"
+  },
+  "fugu": {
+    "icon": "delapouite/porcupinefish",
+    "alt": null,
+    "role": "item",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/porcupinefish.png",
+    "page": "https://game-icons.net/1x1/delapouite/porcupinefish.html",
+    "file": "icons/fugu.png"
+  },
+  "map_fight": {
+    "icon": "lorc/crossed-swords",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/crossed-swords.png",
+    "page": "https://game-icons.net/1x1/lorc/crossed-swords.html",
+    "file": "icons/map_fight.png"
+  },
+  "map_elite": {
+    "icon": "lorc/horned-skull",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/horned-skull.png",
+    "page": "https://game-icons.net/1x1/lorc/horned-skull.html",
+    "file": "icons/map_elite.png"
+  },
+  "map_boss": {
+    "icon": "lorc/daemon-skull",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/daemon-skull.png",
+    "page": "https://game-icons.net/1x1/lorc/daemon-skull.html",
+    "file": "icons/map_boss.png"
+  },
+  "map_shop": {
+    "icon": "lorc/paper-lantern",
+    "alt": "delapouite/shop",
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/paper-lantern.png",
+    "page": "https://game-icons.net/1x1/lorc/paper-lantern.html",
+    "file": "icons/map_shop.png"
+  },
+  "map_rest": {
+    "icon": "delapouite/bamboo-fountain",
+    "alt": "lorc/campfire",
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/bamboo-fountain.png",
+    "page": "https://game-icons.net/1x1/delapouite/bamboo-fountain.html",
+    "file": "icons/map_rest.png"
+  },
+  "map_shrine": {
+    "icon": "delapouite/shinto-shrine",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/shinto-shrine.png",
+    "page": "https://game-icons.net/1x1/delapouite/shinto-shrine.html",
+    "file": "icons/map_shrine.png"
+  },
+  "ryo": {
+    "icon": "delapouite/two-coins",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/two-coins.png",
+    "page": "https://game-icons.net/1x1/delapouite/two-coins.html",
+    "file": "icons/ryo.png"
+  },
+  "technique": {
+    "icon": "lorc/enlightenment",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/enlightenment.png",
+    "page": "https://game-icons.net/1x1/lorc/enlightenment.html",
+    "file": "icons/technique.png"
+  },
+  "stage1": {
+    "icon": "delapouite/mountain-road",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/mountain-road.png",
+    "page": "https://game-icons.net/1x1/delapouite/mountain-road.html",
+    "file": "icons/stage1.png"
+  },
+  "stage2": {
+    "icon": "delapouite/forest",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/forest.png",
+    "page": "https://game-icons.net/1x1/delapouite/forest.html",
+    "file": "icons/stage2.png"
+  },
+  "stage3": {
+    "icon": "delapouite/castle",
+    "alt": "delapouite/pagoda",
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/delapouite/castle.png",
+    "page": "https://game-icons.net/1x1/delapouite/castle.html",
+    "file": "icons/stage3.png"
+  },
+  "st_poison": {
+    "icon": "sbed/poison",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/sbed/poison.png",
+    "page": "https://game-icons.net/1x1/sbed/poison.html",
+    "file": "icons/st_poison.png"
+  },
+  "st_burn": {
+    "icon": "carl-olsen/flame",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/carl-olsen/flame.png",
+    "page": "https://game-icons.net/1x1/carl-olsen/flame.html",
+    "file": "icons/st_burn.png"
+  },
+  "st_block": {
+    "icon": "sbed/shield",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/sbed/shield.png",
+    "page": "https://game-icons.net/1x1/sbed/shield.html",
+    "file": "icons/st_block.png"
+  },
+  "st_stun": {
+    "icon": "skoll/knockout",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/skoll/knockout.png",
+    "page": "https://game-icons.net/1x1/skoll/knockout.html",
+    "file": "icons/st_stun.png"
+  },
+  "st_evade": {
+    "icon": "felbrigg/dodge",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/felbrigg/dodge.png",
+    "page": "https://game-icons.net/1x1/felbrigg/dodge.html",
+    "file": "icons/st_evade.png"
+  },
+  "st_regen": {
+    "icon": "sbed/regeneration",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/sbed/regeneration.png",
+    "page": "https://game-icons.net/1x1/sbed/regeneration.html",
+    "file": "icons/st_regen.png"
+  },
+  "st_sunder": {
+    "icon": "lorc/broken-shield",
+    "alt": null,
+    "role": "ui",
+    "png": "https://game-icons.net/icons/000000/transparent/1x1/lorc/broken-shield.png",
+    "page": "https://game-icons.net/1x1/lorc/broken-shield.html",
+    "file": "icons/st_sunder.png"
+  }
+}

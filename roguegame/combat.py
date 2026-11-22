@@ -6,7 +6,8 @@ for asynchronous PvP (fight another player's saved build "ghost").
 import copy
 import random
 
-from .data import ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats, enemy_fill
+from .data import (ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats, enemy_fill, weapon_stamina_cost,
+                   STAMINA_MAX, STAMINA_REGEN)
 
 TICK = 0.05
 FATIGUE_START = 25.0   # after this many seconds both sides take growing damage
@@ -63,6 +64,8 @@ def effective_stats(grid, cls, techniques=()):
                 sm["dmg"] = (sm["dmg"][0] + aura["summon_dmg"], sm["dmg"][1] + aura["summon_dmg"])
             if aura.get("ki") and st.get("ki"):
                 st["ki"] += aura["ki"]
+            if aura.get("stamina_cost") and weapon_stamina_cost(st):
+                st["stamina_cost"] = max(0.2, round(weapon_stamina_cost(st) + aura["stamina_cost"], 2))
             if aura.get("speed"):
                 st["speed"] += aura["speed"]
     tag_count = {}
@@ -110,6 +113,8 @@ class CItem:
         self.flash = 0.0
         self.triggers = 0
         self.bonus = 0               # Grow: damage this item has gained during the battle
+        self.cost = weapon_stamina_cost(st)   # Stamina per activation (weapons only)
+        self.waiting = False         # charged, but waiting for Stamina
         self.stats = {}              # what this item did this battle: dmg, block, heal, poison, ...
 
 
@@ -149,6 +154,9 @@ class Fighter:
         self.ki_burst_bonus = 0
         self.crit_block = 0
         self.crit_poison = 0
+        self.max_stamina = STAMINA_MAX
+        self.stamina = STAMINA_MAX
+        self.stamina_regen = STAMINA_REGEN
         self.ambush_on_evade = False # Ninja: evading primes an Ambush
         self.ambush = False          # next weapon hit deals double damage
         self.items = []
@@ -168,6 +176,9 @@ class Fighter:
         self.crit += st.get("s_crit", 0)
         self.evade += st.get("s_evade", 0)
         self.counter += st.get("s_counter", 0)
+        self.max_stamina += st.get("s_stamina", 0)
+        self.stamina = self.max_stamina
+        self.stamina_regen += st.get("s_stamina_regen", 0)
         self.start_curse += st.get("s_curse", 0)
         self.crit_block += st.get("s_crit_block", 0)
         self.crit_poison += st.get("s_crit_poison", 0)
@@ -188,6 +199,9 @@ def player_fighter(run):
         f.evade += 0.20
         f.armor_pierce = 0
         f.ambush_on_evade = True
+        f.max_stamina += 1
+        f.stamina = f.max_stamina
+        f.stamina_regen *= 1.25
     elif run.char_id == "kunoichi":
         f.crit += 0.05
         f.poison_on_crit = 2
@@ -260,6 +274,24 @@ def make_battle(run, enemy_id, scale=1.0, seed=0):
     e.curse += p.start_curse
     p.curse += e.start_curse
     return Battle(p, e, seed)
+
+
+def make_pvp_battle(run, ghost, seed=0, name=None):
+    """Arena: your kit against another player's ghost kit. Both sides are full player fighters."""
+    run.hp = run.max_hp
+    ghost.hp = ghost.max_hp
+    p = player_fighter(run)
+    g = player_fighter(ghost)
+    if name:
+        g.name = name
+    for me, other, r in ((p, g, run), (g, p, ghost)):
+        slow = tech_mods(r.techniques).get("enemy_slow", 0)
+        if slow:
+            for ci in other.items:
+                ci.cd = round(ci.cd * (1 + slow), 2)
+    g.curse += p.start_curse
+    p.curse += g.start_curse
+    return Battle(p, g, seed)
 
 
 # ---------------------------------------------------------------- simulation
@@ -430,6 +462,10 @@ class Battle:
             me.block += taken
             self._credit("steal", taken)
             self._emit("steal", side, taken, text=f"STOLE {taken} BLOCK")
+        if st.get("stamina_gain"):
+            gain = min(st["stamina_gain"], me.max_stamina - me.stamina)
+            me.stamina += gain
+            self._credit("stamina", round(gain, 1))
         if st.get("cleanse") and (me.poison or me.burn):
             me.poison = max(0, me.poison - st["cleanse"])
             me.burn = max(0, me.burn - st["cleanse"])
@@ -535,10 +571,17 @@ class Battle:
                 for ci in f.items:
                     ci.flash = max(0.0, ci.flash - dt)
                 continue
+            f.stamina = min(f.max_stamina, f.stamina + f.stamina_regen * dt)
             for ci in f.items:
                 ci.flash = max(0.0, ci.flash - dt)
                 ci.timer += dt
                 if ci.timer >= ci.cd:
+                    if ci.cost and f.stamina < ci.cost:
+                        ci.timer = ci.cd          # charged: swings as soon as there is Stamina
+                        ci.waiting = True
+                        continue
+                    ci.waiting = False
+                    f.stamina -= ci.cost
                     ci.timer -= ci.cd
                     self._activate(side, ci)
             if f.summons:

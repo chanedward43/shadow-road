@@ -1,25 +1,17 @@
 """Save and continue a run. The game autosaves every time the map screen opens.
 
-Saves live in %APPDATA%/ShadowRoad on Windows (or ~/.shadowroad elsewhere), so they
-also work from the packaged .exe. A save is plain JSON: easy to inspect or delete.
+Saves go through storage.py: a JSON file in %APPDATA%/ShadowRoad on desktop, or the
+browser's localStorage on the website (kept across new versions of the game).
 """
 import json
-import os
 
+from . import storage
 from .inventory import Grid, ItemInst
 
 SAVE_VERSION = 1
 
 
-def save_dir():
-    base = os.environ.get("APPDATA") or os.path.expanduser("~")
-    d = os.path.join(base, "ShadowRoad" if os.environ.get("APPDATA") else ".shadowroad")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def save_path():
-    return os.path.join(save_dir(), "run.json")
+save_dir = storage.save_dir
 
 
 def _grid_to(g):
@@ -45,6 +37,7 @@ def run_to_dict(run):
         boss_of={str(k): v for k, v in run.boss_of.items()},
         seen_events=run.seen_events, map=run.map, pos=list(run.pos) if run.pos else None,
         battles_won=run.battles_won, rerolls=run.rerolls, techniques=run.techniques, kills=run.kills,
+        started=run.started, path=run.path, gold_earned=run.gold_earned,
     )
 
 
@@ -57,6 +50,9 @@ def run_from_dict(d):
               "kills"):
         setattr(run, k, d[k])
     run.pos = tuple(d["pos"]) if d["pos"] else None
+    run.started = d.get("started", run.started)
+    run.path = d.get("path", [])
+    run.gold_earned = d.get("gold_earned", 0)
     run.bag = _grid_from(d["bag"])
     run.stash = _grid_from(d["stash"])
     run.fight_pool = {int(k): v for k, v in d["fight_pool"].items()}
@@ -67,11 +63,7 @@ def run_from_dict(d):
 def save_run(run):
     """Autosave. Never lets a save problem (disk, browser storage) crash the game."""
     try:
-        tmp = save_path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(run_to_dict(run), f)
-        os.replace(tmp, save_path())   # atomic: a crash mid-write never corrupts the save
-        return True
+        return storage.write("run", json.dumps(run_to_dict(run)))
     except Exception as e:   # noqa: BLE001
         print("autosave skipped:", repr(e))
         return False
@@ -80,8 +72,10 @@ def save_run(run):
 def load_run():
     """Return the saved RunState, or None if there is no (valid) save."""
     try:
-        with open(save_path(), encoding="utf-8") as f:
-            d = json.load(f)
+        text = storage.read("run")
+        if not text:
+            return None
+        d = json.loads(text)
         if d.get("version") != SAVE_VERSION:
             return None
         return run_from_dict(d)
@@ -90,7 +84,4 @@ def load_run():
 
 
 def clear_run():
-    try:
-        os.remove(save_path())
-    except OSError:
-        pass
+    storage.delete("run")

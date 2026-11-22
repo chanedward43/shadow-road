@@ -349,6 +349,221 @@ class TestBattleReplayAndStats(unittest.TestCase):
                 self.assertIn(k, KEYWORDS)
 
 
+class TestStaminaAndHistory(unittest.TestCase):
+    SPAM = ["shuriken", "kunai", "tekko_kagi", "shuriken", "kunai", "tekko_kagi"]
+
+    def swings(self, items, cls="ninja", secs=20.0):
+        r = RunState(cls, 4)
+        r.bag.items = []
+        for i in items:
+            self.assertTrue(r.bag.first_fit(ItemInst(i)), i)
+        b = make_battle(r, "kurogane", 1.0, seed=3)
+        for f in b.f:                      # nobody dies: we only count swings
+            f.hp = f.max_hp = 10 ** 6
+        b.advance(secs)
+        weapons = [ci for ci in b.f[0].items if ci.cost]
+        return b, sum(ci.stats.get("uses", 0) for ci in weapons)
+
+    def test_weapon_costs(self):
+        self.assertEqual(data.weapon_stamina_cost(data.ITEMS["shuriken"]), 0.5)
+        self.assertGreater(data.weapon_stamina_cost(data.ITEMS["nodachi"]),
+                           data.weapon_stamina_cost(data.ITEMS["katana"]))
+        self.assertEqual(data.weapon_stamina_cost(data.ITEMS["onigiri"]), 0, "only weapons cost Stamina")
+        for iid, d in data.ITEMS.items():
+            if d.get("enemy"):
+                self.assertEqual(data.weapon_stamina_cost(d), 0, iid)
+
+    def test_stamina_limits_weapon_spam(self):
+        b, n = self.swings(self.SPAM)
+        me = b.f[0]
+        free = sum(20.0 / ci.cd for ci in me.items if ci.cost)          # swings with infinite Stamina
+        self.assertLess(n, free * 0.85, "a kit of fast weapons must be throttled by Stamina")
+        spent = sum(ci.stats.get("uses", 0) * ci.cost for ci in me.items if ci.cost)
+        self.assertLessEqual(spent, me.max_stamina + me.stamina_regen * 20.0 + 0.01)
+
+    def test_stamina_items_help(self):
+        _, base = self.swings(self.SPAM)
+        _, fed = self.swings(self.SPAM + ["matcha_tea", "ginseng"])
+        self.assertGreater(fed, base, "Stamina items let weapons swing more")
+        r = RunState("samurai", 4)
+        r.bag.first_fit(ItemInst("katana"))
+        g = effective_stats(r.bag, "samurai", [])
+        self.assertTrue(all(st.get("stamina_cost") is None for st in g.values()))
+
+    def test_breathing_scroll_cuts_cost(self):
+        r = RunState("ninja", 4)
+        r.bag.items = []
+        r.bag.place(ItemInst("breathing_scroll"), 0, 0)
+        k = ItemInst("katana")
+        self.assertTrue(r.bag.first_fit(k))
+        eff = effective_stats(r.bag, "ninja", [])
+        if any(n.uid == k.uid for n in r.bag.neighbors(r.bag.items[0])):
+            self.assertLess(eff[k.uid]["stamina_cost"], data.weapon_stamina_cost(data.ITEMS["katana"]))
+
+    def test_history_roundtrip_and_cap(self):
+        from roguegame import history, storage
+        storage.delete(history.KEY)
+        r = RunState("kunoichi", 9)
+        r.visit(r.available_nodes()[0])
+        r.kills = ["kappa"]
+        r.killed_by = "kurogane"
+        rec = history.record_run(r, False)
+        runs = history.load_history()
+        self.assertEqual(runs[0]["seed"], 9)
+        self.assertEqual(runs[0]["killed_by"], "kurogane")
+        self.assertEqual(runs[0], rec)
+        for i in range(history.MAX_RUNS + 5):
+            history.record_run(RunState("samurai", i), True)
+        runs = history.load_history()
+        self.assertEqual(len(runs), history.MAX_RUNS, "history is capped")
+        self.assertEqual(history.summary(runs)["streak"], history.MAX_RUNS)
+        storage.write(history.KEY, "not json")
+        self.assertEqual(history.load_history(), [], "a broken history never crashes")
+        storage.delete(history.KEY)
+
+    def test_fresh_seeds_differ(self):
+        from roguegame.run import fresh_seed
+        self.assertGreater(len({fresh_seed(i) for i in range(20)}), 15)
+
+
+class FakeSupabase:
+    """A tiny stand-in for Supabase's REST API (just what the Arena uses), on localhost."""
+
+    def __init__(self):
+        import http.server
+        import json
+        import threading
+        import urllib.parse
+        tables = self.tables = {"ghosts": [], "scores": []}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _table(self):
+                u = urllib.parse.urlparse(self.path)
+                return u.path.rsplit("/", 1)[-1], urllib.parse.parse_qs(u.query)
+
+            def do_POST(self):
+                name, _ = self._table()
+                n = int(self.headers.get("Content-Length", 0))
+                tables[name].append(json.loads(self.rfile.read(n)))
+                self.send_response(201)
+                self.end_headers()
+
+            def do_GET(self):
+                name, q = self._table()
+                rows = list(reversed(tables[name]))
+                for k, (v,) in q.items():
+                    if k in ("select", "order", "limit"):
+                        continue
+                    op, val = v.split(".", 1)
+                    rows = [r for r in rows if (str(r.get(k)) == val) == (op == "eq")]
+                body = json.dumps(rows).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class TestArena(unittest.TestCase):
+    def wait(self, req):
+        import time
+        t = time.time()
+        while not req.done and time.time() - t < 5:
+            time.sleep(0.01)
+        return req
+
+    def test_rounds_hearts_and_end(self):
+        from roguegame import arena
+        run = arena.new_run("samurai", 5)
+        base = run.max_hp
+        arena.start_round(run)
+        self.assertEqual(run.gold, arena.FIRST_GOLD)
+        self.assertEqual(run.max_hp, base)
+        for _ in range(arena.HEARTS - 1):
+            self.assertEqual(arena.apply_result(run, False), "next")
+        self.assertEqual(arena.apply_result(run, False), "out")
+        run = arena.new_run("ninja", 6)
+        for i in range(arena.MAX_WINS):
+            arena.start_round(run)
+            state = arena.apply_result(run, True)
+        self.assertEqual(state, "champion")
+        self.assertEqual(run.stage, 3)
+        self.assertEqual(run.max_hp, base and run.arena["base_hp"] + arena.HP_PER_ROUND * 9 + arena.tech_hp(run))
+
+    def test_ghost_roundtrip_fights_like_the_original(self):
+        from roguegame import arena
+        from roguegame.combat import make_pvp_battle
+        bot = arena.bot_record("onmyoji", 6, 1)
+        self.assertTrue(arena.valid_record(bot))
+        self.assertEqual(len(bot["build"]["techniques"]), 2, "techniques at rounds 3 and 6")
+        g1, g2 = arena.ghost_run(bot), arena.ghost_run(bot)
+        self.assertEqual(g1.bag.to_dict(), g2.bag.to_dict())
+        me = arena.new_run("sohei", 2)
+        arena.start_round(me)
+        b1 = make_pvp_battle(me, g1, seed=4)
+        b1.run_to_end()
+        b2 = make_pvp_battle(me, g2, seed=4)
+        b2.run_to_end()
+        self.assertEqual((b1.winner, b1.f[0].hp, b1.f[1].hp), (b2.winner, b2.f[0].hp, b2.f[1].hp))
+
+    def test_bad_ghosts_are_safe(self):
+        from roguegame import arena
+        import random as _r
+        bot = arena.bot_record("kunoichi", 2, 1)
+        bot["build"]["bag"]["items"].append(dict(id="no_such_item", x=0, y=0, rot=0, level=9))
+        bot["build"]["bag"]["items"].append(dict(id="kappa_bite", x=6, y=4, rot=0, level=1))
+        g = arena.ghost_run(bot)
+        self.assertTrue(all(i.id in data.ITEMS and not i.data.get("enemy") for i in g.bag.items))
+        self.assertFalse(arena.valid_record(dict(cls="dragon", build={})))
+        opp = arena.pick_opponent([dict(player="me", cls="ninja", round=2, version="x", build={})], "me", 2,
+                                  _r.Random(1))
+        self.assertTrue(opp.get("bot"), "no usable ghost -> AI ghost")
+
+    def test_online_against_fake_backend(self):
+        from roguegame import arena, online
+        from roguegame.version import VERSION
+        fake = FakeSupabase()
+        old = online._config
+        online._config = dict(url=fake.url, key="test-anon-key")
+        try:
+            prof = online.profile()
+            other = arena.bot_record("sohei", 3, 9)
+            other.update(player="someone-else", name="Benkei")
+            other.pop("bot")
+            self.assertTrue(self.wait(online.upload_ghost(other)).ok)
+            mine = arena.new_run("ninja", 4)
+            for _ in range(3):
+                arena.start_round(mine)
+            self.assertTrue(self.wait(online.upload_ghost(arena.ghost_record(mine, prof))).ok)
+            req = self.wait(online.find_ghosts(3, VERSION, prof["id"]))
+            rows = req.json()
+            self.assertEqual([r["name"] for r in rows], ["Benkei"], "never matched with your own ghost")
+            import random as _r
+            opp = arena.pick_opponent(rows, prof["id"], 3, _r.Random(0))
+            self.assertEqual(opp["name"], "Benkei")
+            self.assertTrue(self.wait(online.submit_score(arena.score_record(mine, prof))).ok)
+            self.assertEqual(len(self.wait(online.top_scores(VERSION)).json()), 1)
+        finally:
+            online._config = old
+            fake.close()
+        self.assertFalse(online.request("GET", "/x").ok if not online.enabled() else False)
+
+    def test_names(self):
+        from roguegame import online
+        self.assertEqual(online.clean_name("  <b>Hiro  </b>!!  "), "bHiro b")
+        self.assertEqual(len(online.clean_name("x" * 40)), 14)
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame
@@ -359,7 +574,8 @@ class TestScreens(unittest.TestCase):
         screens = [scenes.TitleScene(g), scenes.CharSelectScene(g), scenes.MapScene(g), scenes.StageScene(g),
                    scenes.InventoryScene(g, "shop", offers=g.run.shop_offers(), on_done=lambda: None),
                    scenes.TechniqueScene(g, then=lambda: None), scenes.RestScene(g),
-                   scenes.EventScene(g, EVENTS[0]), scenes.BattleScene(g, "ashura", "boss"), scenes.EndScene(g, True)]
+                   scenes.EventScene(g, EVENTS[0]), scenes.BattleScene(g, "ashura", "boss"), scenes.EndScene(g, True),
+                   scenes.MatchHistoryScene(g), scenes.ArenaLobbyScene(g)]
         for sc in screens:
             with self.subTest(screen=type(sc).__name__):
                 g.change(sc)

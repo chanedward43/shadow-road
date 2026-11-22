@@ -45,7 +45,15 @@ class Game:
                 self.scene.handle(ev)
         self.scene.update(dt)
         self.scene.draw(self.screen)
+        self.draw_version()
         pygame.display.flip()
+
+    def draw_version(self):
+        from roguegame import ui
+        from roguegame.version import label
+        img = ui.font(13).render(label(), True, (120, 112, 100))
+        img.set_alpha(170)
+        self.screen.blit(img, (6, self.screen.get_height() - img.get_height() - 3))
 
     async def loop(self):
         while self.running:

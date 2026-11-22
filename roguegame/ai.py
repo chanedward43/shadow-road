@@ -12,7 +12,7 @@ on strategy: which path to walk, what to buy, which loot to take, when to heal.
 """
 import numpy as np
 
-from .data import ITEMS, RARITIES, CHARACTERS, TECHNIQUES
+from .data import ITEMS, RARITIES, CHARACTERS, TECHNIQUES, weapon_stamina_cost
 from .events import EVENTS
 from .sim import STOP, play
 
@@ -52,7 +52,9 @@ def item_features(iid, run):
           d["per_tag"][1] * _tag_count(run, d["per_tag"][0]) / 5.0 if d.get("per_tag") else 0.0,
           (d.get("s_crit_block", 0) + d.get("s_crit_poison", 0)) / 3.0,
           _synergy(iid, run),
-          d.get("grow", 0) / 1.5 + d.get("steal_block", 0) / 5.0 + d.get("cleanse", 0) / 3.0]
+          d.get("grow", 0) / 1.5 + d.get("steal_block", 0) / 5.0 + d.get("cleanse", 0) / 3.0,
+          (weapon_stamina_cost(d) / d["cd"]) if d.get("cd") else 0.0,
+          per("stamina_gain") + d.get("s_stamina", 0) / 3.0 + d.get("s_stamina_regen", 0)]
     return np.array(f)
 
 
@@ -66,7 +68,7 @@ def _synergy(iid, run):
     return sum(1 for i in run.bag.items if tags & set(i.data["tags"])) / 6.0
 
 
-ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 10
+ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 12
 
 
 def path_features(kind, run):
@@ -170,7 +172,7 @@ def describe_policy(agent, top=8):
              + ["aura", "dps", "block/s", "heal/s", "poison/s", "burn/s", "stun", "dodge/s", "evade", "crit",
                 "start_block+hp", "lifesteal", "heal_when_hurt", "summon_dps", "curse/s", "hex", "ki/s",
                 "ki_burst", "counter+start_curse", "per_tag_bonus", "on_crit", "synergy",
-                "grow/steal/cleanse"])
+                "grow/steal/cleanse", "stamina_use/s", "stamina_gain"])
     w = agent.w["item"]
     order = np.argsort(-np.abs(w))[:top]
     return [(names[i] if i < len(names) else str(i), round(float(w[i]), 2)) for i in order]

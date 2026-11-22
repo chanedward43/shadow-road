@@ -122,6 +122,7 @@ def autotune(bal, args, pool, log):
     """Measure -> adjust, up to args.rounds times. Saves balance.json after every round (a checkpoint you
     can stop at). Returns (bal, last_results, balanced) - last_results match bal when balanced is True."""
     res = None
+    gain, last_sign = 1.0, 0       # damping: each time we overshoot the target, take smaller steps
     for rnd in range(args.rounds):
         res = measure(args.eval, bal, pool)
         st = {c: stats(r) for c, (r, _) in res.items()}
@@ -132,7 +133,11 @@ def autotune(bal, args, pool, log):
         changed = False
         # Proportional steps: a big miss gets a big correction, a small miss a small one.
         if abs(w - args.target) > 0.04:
-            f = clamp(((w + 0.02) / (args.target + 0.02)) ** 0.5, 0.75, 1.2)
+            sign = 1 if w > args.target else -1
+            if last_sign and sign != last_sign:
+                gain *= 0.5
+            last_sign = sign
+            f = clamp(((w + 0.02) / (args.target + 0.02)) ** (0.5 * gain), 0.75, 1.2)
             for k in bal["stage_mult"]:
                 bal["stage_mult"][k] = round(bal["stage_mult"][k] * f, 3)
             log(f"    stages x{f:.2f}")

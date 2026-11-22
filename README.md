@@ -26,6 +26,15 @@ python main.py
   or a status (Block, Poison...) for what it means. The battle log lists every activation.
 - After a battle: a breakdown of what every item did, and **Replay** to watch the same fight again.
 - Effect words (Poison, Burn, Stun...) are coloured and italic in tooltips, with definitions underneath.
+- **Stamina** (teal bar): every weapon swing costs Stamina (5 max, refills 1 per second). A weapon
+  that is charged but can't pay glows teal and waits. Food, Matcha Tea, Ginseng, Waraji and the
+  Breathing Scroll keep it flowing. The top of the battle shows **Fight time**: the battle's own clock,
+  the same at any speed (fatigue starts at 25s). At 2x/4x it also shows how long you actually watched.
+- **Match History** (title screen, and after every run): every finished run with its path, final kit,
+  techniques and what killed you. Click a class to filter, and **Play this seed** to retry the same
+  map. On the website it is stored in your browser, so it survives game updates (but not clearing
+  your browser's site data); on desktop it is in `%APPDATA%\ShadowRoad`.
+- Every new run gets a random seed (from the clock and your mouse position).
 
 ## Development
 | Task | Command |
@@ -36,6 +45,80 @@ python main.py
 | Train the AI and re-balance | `pip install numpy` then `python tools/balance.py --autotune` |
 
 Game design, research notes and balance details are in [DESIGN.md](DESIGN.md).
+
+## Arena (online ghost PvP)
+**Arena (online)** on the title screen: shop and arrange your kit each round, then fight the
+*ghost* of another player's kit from the same round of the same game version. Win 10 fights to be
+champion; 5 losses and you're out. Your kit is uploaded as a ghost each round so others fight you.
+When nobody has played a round yet (or you're offline) you face an AI ghost instead.
+
+The website itself stays on GitHub Pages; ghosts and the leaderboard live in a free **Supabase**
+database. Until it's set up the Arena simply runs offline against AI ghosts.
+
+**Switch it on (one time, ~10 minutes):**
+1. Create a free account and a new project at [supabase.com](https://supabase.com) (any name and region).
+2. In the project: **SQL Editor -> New query**, paste all of [tools/supabase_setup.sql](tools/supabase_setup.sql),
+   press **Run**. This makes the `ghosts` and `scores` tables and the rules: players can only
+   *add* and *read* - never edit or delete.
+3. **Project Settings -> API**: copy the **Project URL** and the **anon public** key.
+4. Create `assets/online.json`:
+   ```json
+   {"url": "https://YOUR-PROJECT.supabase.co", "key": "YOUR-ANON-PUBLIC-KEY"}
+   ```
+   The anon key is designed to be public (it ships inside the web page); the rules from step 2
+   protect the data. Never put the **service_role** key here.
+5. Commit and push. The lobby should now say "Online" and show the leaderboard.
+
+Notes: opponents only come from the same `VERSION`, so bumping the version starts a fresh ghost pool
+and leaderboard (balance changes can't make old ghosts unfair). Clients are trusted, so a determined
+cheater could upload a fake kit; Supabase lets you delete rows by hand in **Table Editor**.
+The free tier pauses a project after a week with no visitors; open the dashboard to wake it.
+
+## Versions
+The version is shown bottom-left on every screen and saved with each run in Match History. Bump
+`VERSION` in [roguegame/version.py](roguegame/version.py) before pushing:
+**+0.01** hotfix or number tweaks, **+0.1** new items / UI / character changes, **+1** a new season.
+While in beta it shows `Beta v0.xx`. For the first season, set `BETA = False` and `VERSION = "1.00"`.
+
+## Run the reinforcement learning yourself
+The **Balance Director** (`tools/balance.py`) trains one AI agent per class, measures how often a
+skilled agent wins, and tunes the difficulty knobs in `assets/balance.json`. It runs on the CPU
+(numpy only, no GPU needed) and uses 5 worker processes.
+
+**1. One-time setup** (in a terminal, in the project folder):
+```
+pip install pygame-ce numpy
+```
+
+**2. Pick a command:**
+
+| What you want | Command | Time (roughly) |
+|---|---|---|
+| Just measure the current balance (reuse trained agents) | `python tools/balance.py --skip-train --eval 200` | 2-5 min |
+| Re-tune difficulty with the existing agents | `python tools/balance.py --skip-train --autotune --eval 200` | 10-30 min |
+| Full retrain + tune (after adding items or mechanics) | `python tools/balance.py --episodes 2000 --eval 200 --autotune --rounds 6` | 1-3 h |
+| Same, but stop at the first balanced point | add `--checkpoint` | shorter |
+
+Flags: `--episodes` = training runs per class (more = smarter agents, slower), `--eval` = test runs
+per class (more = more accurate %), `--target 0.20` = desired win rate for a skilled player,
+`--rounds` = max tuning rounds. Retrain from scratch (no `--skip-train`) whenever you change what
+the AI sees - new item stats, tags or mechanics - otherwise old agents are skipped or misjudge.
+
+**3. Read the results:** the terminal prints each round's win rate per class. Afterwards look at
+`assets/balance_report.md` (win rates, what killed runs, best/worst items) and `assets/balance.json`
+(the knobs). Stop it any time with Ctrl+C; the last finished round is already saved.
+
+**4. Ship it:** play a run with `python main.py` to sanity-check, run the tests, then commit and push
+`assets/balance.json`, `assets/balance_report.*` and `assets/ai/`. GitHub Actions rebuilds the website
+with the new balance automatically.
+```
+git add assets
+git commit -m "Rebalance"
+git push
+```
+
+You can also hand-edit `assets/balance.json` (e.g. lower `boss_mult` to make bosses weaker, or raise a
+class's `class_hp`) and just restart the game - no training needed.
 
 ## Credits
 Art: [Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack) by Pixel-Boy and AAA (CC0).

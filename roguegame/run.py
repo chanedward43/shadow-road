@@ -3,7 +3,9 @@
 Every run has a seed. The seed decides the map layout, which regular enemies
 appear in each stage, which villain rules each stage, and which ? events show up.
 """
+import os
 import random
+import time
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
                    TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL,
@@ -52,9 +54,21 @@ def gen_map(rng, stage):
     return rows
 
 
+def fresh_seed(extra=0):
+    """A new random seed for every run. Mixes the clock (nanoseconds), a high-resolution timer, the OS's
+    random source when there is one, and anything extra (the menu passes the mouse position), so two runs
+    never start the same even in a browser, where Python's own random module can start identically."""
+    mix = time.time_ns() ^ (time.perf_counter_ns() << 7) ^ (int(extra) * 2654435761)
+    try:
+        mix ^= int.from_bytes(os.urandom(8), "little")
+    except (NotImplementedError, OSError):
+        pass
+    return random.Random(mix).randrange(1 << 30)
+
+
 class RunState:
     def __init__(self, char_id, seed=None):
-        self.seed = seed if seed is not None else random.randrange(1 << 30)
+        self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
         ch = CHARACTERS[char_id]
@@ -78,6 +92,11 @@ class RunState:
         self.rerolls = 0
         self.techniques = []
         self.kills = []          # enemy ids defeated (for stats / the balance tool)
+        # match-history tracking
+        self.started = time.time()
+        self.path = []           # every node visited: dict(stage, row, kind, hp, max_hp)
+        self.gold_earned = 0
+        self.killed_by = None
 
     # ---------------- techniques (permanent upgrades)
     def technique_choices(self, n=3):
@@ -118,6 +137,8 @@ class RunState:
     def visit(self, rc):
         self.pos = rc
         self.node(rc)["visited"] = True
+        self.path.append(dict(stage=self.stage, row=rc[0], kind=self.node(rc)["kind"], hp=self.hp,
+                              max_hp=self.max_hp))
         return self.node(rc)
 
     def next_stage(self):
@@ -191,6 +212,7 @@ class RunState:
         lo, hi = GOLD_REWARD.get(kind, GOLD_REWARD["fight"])
         g = self.rng.randint(lo, hi)
         self.gold += g
+        self.gold_earned += g
         return g
 
     def pick_enemy(self, kind):

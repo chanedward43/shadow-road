@@ -356,6 +356,11 @@ def describe_stats(st):
             out.append(f"  Steal up to {st['steal_block']} Block from the enemy")
         if st.get("cleanse"):
             out.append(f"  Cleanse {st['cleanse']} Poison and Burn from yourself")
+        if st.get("stamina_gain"):
+            out.append(f"  Restore {st['stamina_gain']:g} Stamina")
+        cost = weapon_stamina_cost(st)
+        if cost:
+            out.append(f"  Costs {cost:g} Stamina per swing")
         if st.get("dodge"):
             out.append(f"  Gain {st['dodge']} Dodge (evade the next hit)")
         if st.get("regen"):
@@ -385,6 +390,10 @@ def describe_stats(st):
         starts.append(f"+{st['s_crit_block']} Block on every crit")
     if st.get("s_crit_poison"):
         starts.append(f"+{st['s_crit_poison']} Poison on every crit")
+    if st.get("s_stamina"):
+        starts.append(f"+{st['s_stamina']:g} max Stamina")
+    if st.get("s_stamina_regen"):
+        starts.append(f"+{st['s_stamina_regen']:g} Stamina per second")
     if starts:
         out.append("Battle start: " + ", ".join(starts))
     aura = st.get("aura")
@@ -401,6 +410,8 @@ def describe_stats(st):
             parts.append(f"+{aura['summon_dmg']} shikigami dmg")
         if aura.get("ki"):
             parts.append(f"+{aura['ki']} Ki")
+        if aura.get("stamina_cost"):
+            parts.append(f"{aura['stamina_cost']:g} Stamina cost")
         if aura.get("crit"):
             parts.append(f"+{int(aura['crit'] * 100)}% crit")
         out.append(f"Adjacent {who}: " + ", ".join(parts))
@@ -429,7 +440,7 @@ def level_stats(st, level):
         out["dmg"] = (round(out["dmg"][0] * mult), round(out["dmg"][1] * mult))
     for k in ("block", "heal", "poison", "burn", "regen", "s_block", "s_hp", "s_regen", "s_thorns", "dodge",
               "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "s_crit_block", "s_crit_poison",
-              "grow", "steal_block", "cleanse"):
+              "grow", "steal_block", "cleanse", "stamina_gain", "s_stamina"):
         if out.get(k):
             out[k] = max(out[k] + 1, round(out[k] * mult))
     for k in ("s_crit", "s_evade", "crit", "lifesteal"):
@@ -904,3 +915,40 @@ ENEMIES["gama"]["kit"] = [("toad_scroll", 1)]          # passive Regen relic he 
 ENEMIES["yuki_onna"]["kit"] = [("yuki_breath", 1)]
 ENEMIES["orochi"]["kit"] = [("orochi_fangs", 1)]
 ENEMIES["gama"]["phases"][0]["add"] = ["e_toad_smoke"]
+
+
+# ================================================================ v6: STAMINA
+# Every fighter has Stamina (5, refills 1/s). Each weapon swing costs Stamina - by default half its
+# base cooldown, clamped to 0.5..2.5 - so a kit of many fast weapons can't swing non-stop.
+# Only weapons that deal damage cost Stamina; enemy-only signature moves never do.
+#   stamina_cost=N   - override a weapon's cost
+#   stamina_gain=N   - restore N Stamina when this item activates
+#   s_stamina=N / s_stamina_regen=N - more max Stamina / faster refill (per second)
+#   aura stamina_cost=-N - adjacent weapons cost less
+STAMINA_MAX = 5.0
+STAMINA_REGEN = 1.0
+
+
+def weapon_stamina_cost(st):
+    if not st.get("dmg") or "weapon" not in st.get("tags", ()) or st.get("enemy"):
+        return 0.0
+    if "stamina_cost" in st:
+        return st["stamina_cost"]
+    base_cd = ITEMS.get(st["id"], st).get("cd") or 1.0
+    return min(2.5, max(0.5, round(base_cd * 0.5, 1)))
+
+
+item("matcha_tea", "Matcha Tea", S1, "common", ["food"], cd=4.0, stamina_gain=2)
+item("mochi", "Mochi", S1, "rare", ["food"], cd=5.0, heal=4, stamina_gain=1.5)
+item("ginseng", "Ginseng Root", S1, "rare", ["charm"], s_stamina=2, s_stamina_regen=0.3)
+item("waraji", "Straw Waraji", H2, "common", ["armor"], s_stamina_regen=0.25, s_evade=0.03)
+item("breathing_scroll", "Breathing Scroll", H2, "epic", ["scroll"],
+     aura=dict(tags=("weapon",), stamina_cost=-0.4, speed=0.05), price=11)
+item("kiai_shout", "Kiai Shout", S1, "rare", ["charm"], cls="samurai", cd=6.0, stamina_gain=3, block=5)
+item("hyorogan", "Hyōrōgan Pills", S1, "rare", ["food"], cls="ninja", cd=3.5, stamina_gain=1.5)
+for _iid, _g in (("onigiri", 1), ("sake_gourd", 1), ("bento_box", 1)):
+    ITEMS[_iid]["stamina_gain"] = _g
+
+CHARACTERS["ninja"]["passive"] = (
+    "Shinobi: 20% chance to evade; weapons trigger 15% faster; 6 max Stamina with 25% faster refill. "
+    "Every evade or dodge primes an Ambush: +2 Block, next weapon hit deals double damage.")

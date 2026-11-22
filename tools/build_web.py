@@ -28,9 +28,10 @@ def stage():
                     ignore=lambda d, names: [n for n in names if n == "__pycache__" or n in SKIP_MODULES])
     os.makedirs(os.path.join(STAGE, "assets"))
     shutil.copytree(os.path.join(ROOT, "assets", "art"), os.path.join(STAGE, "assets", "art"))
-    bal = os.path.join(ROOT, "assets", "balance.json")
-    if os.path.exists(bal):
-        shutil.copy(bal, os.path.join(STAGE, "assets"))
+    for name in ("balance.json", "online.json"):       # online.json: the Arena's server (optional)
+        src = os.path.join(ROOT, "assets", name)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(STAGE, "assets"))
     # loading-screen / favicon image
     shutil.copy(os.path.join(ROOT, "assets", "art", "samurai.png"), os.path.join(STAGE, "favicon.png"))
 

@@ -266,6 +266,40 @@ Every run has a seed, shown on the map screen. The seed decides:
 | 2 | Kiyohime, the Serpent Bride | **Yuki-onna, the Snow Woman**: freezing stuns, then a blizzard | Chōchin-obake, Hitodama Swarm |
 | 3 | Lord Ashura, the Demon Shogun | **Yamata no Orochi**: more heads wake as it weakens, and each awakening purges your poison and burn | Niō Guardian Statue, Katon Ninja |
 
+New runs take their seed from the clock, the mouse position and OS randomness, so every
+visit to the website starts a different run. Match History's **Play this seed** replays a seed.
+
+## Stamina
+Like Backpack Battles, weapons spend Stamina. This stops a kit made only of fast weapons from swinging non-stop.
+- Every fighter has 5 Stamina and regains 1 per second. The Ninja has 6 and regains it 25% faster.
+- A weapon's cost is half its base cooldown, kept between 0.5 and 2.5. A Shuriken costs 0.5 and a Nōdachi 1.5.
+  Enemies wielding real weapons pay the same costs. Enemy-only signature moves are free.
+- A charged weapon that can't pay holds its charge. It glows teal and swings once there is enough Stamina.
+- Only damage-dealing weapons cost Stamina. Food, armour, charms and scrolls are free.
+
+| Item | Effect |
+|---|---|
+| Matcha Tea (common food) | +2 Stamina every 4s |
+| Mochi (rare food) | Heal 4, +1.5 Stamina every 5s |
+| Ginseng Root (rare charm) | +2 max Stamina, +0.3 Stamina per second |
+| Straw Waraji (common armour) | +0.25 Stamina per second, +3% evade |
+| Breathing Scroll (epic) | Adjacent weapons cost 0.4 less and are 5% faster |
+| Kiai Shout (Samurai) | +3 Stamina and 5 Block every 6s |
+| Hyōrōgan Pills (Ninja) | +1.5 Stamina every 3.5s |
+| Onigiri, Sake Gourd, Bentō | now also restore 1 Stamina |
+
+## Match history
+When a run ends it is saved to `storage.py`. In the browser that is localStorage, which belongs to the
+site address and so survives new pushes. On desktop it is `%APPDATA%\ShadowRoad\history.json`. The last 100
+runs are kept. Following Slay the Spire's run history, each run shows:
+- the result, how far it got (stage and floor), and what killed it,
+- the path with each node's type and the HP you arrived with,
+- the final kit as a real grid with tooltips, and the techniques learned,
+- battles, elites, bosses, max HP, ryō earned, duration and seed.
+
+The header shows the totals: runs, win rate and current win streak. It also shows wins and best stage for
+each class, and clicking a class filters the list.
+
 ## Harder mobs
 Regular enemies now hit 35% harder and have 35% more HP. Elites get +15%. Bosses are unchanged. The Balance Director (below) re-tunes these numbers automatically.
 

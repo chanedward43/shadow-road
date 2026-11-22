@@ -26,6 +26,8 @@ KEYWORDS = {
     "ambush": ("Ambush", (255, 230, 120), "Ninja: after an evade, the next weapon hit deals double damage."),
     "sunder": ("Armor break", (150, 180, 255), "Destroys part of the enemy's Block."),
     "speed": ("Speed", (160, 220, 255), "Makes adjacent items trigger more often."),
+    "stamina": ("Stamina", (120, 230, 200), "Weapons spend it to swing (5 max, refills 1 per second). "
+                                             "Without enough, a weapon waits."),
 }
 
 # words (lower case, punctuation stripped) that mean each keyword
@@ -35,7 +37,7 @@ ALIASES = {
     "evasion": "evasion", "evade": "evasion", "crit": "crit", "crits": "crit", "lifesteal": "lifesteal",
     "curse": "curse", "hex": "hex", "ki": "ki", "shikigami": "shikigami", "summon": "shikigami",
     "counter-attack": "counter", "counter": "counter", "grow": "grow", "steal": "steal", "cleanse": "cleanse",
-    "resolve": "resolve", "ambush": "ambush", "destroy": "sunder", "speed": "speed",
+    "resolve": "resolve", "ambush": "ambush", "destroy": "sunder", "speed": "speed", "stamina": "stamina",
 }
 
 _WORD = re.compile(r"[A-Za-zōŌū\-]+")

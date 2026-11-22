@@ -7,7 +7,10 @@ import copy
 import random
 
 from .data import (ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats, enemy_fill, weapon_stamina_cost,
-                   STAMINA_MAX, STAMINA_REGEN)
+                   STAMINA_MAX, STAMINA_REGEN, BLOOD_MOON_STAGE)
+
+BLOOD_MOON_CRIT = 0.10
+BLOOD_MOON_SPEED = 0.9      # enemy items recharge 10% faster
 
 TICK = 0.05
 FATIGUE_START = 25.0   # after this many seconds both sides take growing damage
@@ -225,6 +228,15 @@ def player_fighter(run):
     f.evade += mods.get("evade", 0)
     f.crit += mods.get("crit", 0)
     f.poison_on_crit += mods.get("poison_on_crit", 0)
+    if run.stage >= 4:                        # endless class passives (ENDLESS_PASSIVES in data.py)
+        depth = run.stage - 3
+        if run.char_id == "samurai":          # Way of the Blade: weapons +2, then +1 more per endless stage
+            for ci in f.items:
+                if ci.st.get("dmg") and "weapon" in ci.st.get("tags", ()):
+                    ci.st["dmg"] = (ci.st["dmg"][0] + depth + 2, ci.st["dmg"][1] + depth + 2)
+        elif run.char_id == "sohei":          # Unshakable: counters +3 and +6 starting Block per endless stage
+            f.counter += 3 * depth
+            f.block += 6 * depth
     return f
 
 
@@ -271,6 +283,10 @@ def make_battle(run, enemy_id, scale=1.0, seed=0):
     if slow:
         for ci in e.items:
             ci.cd = round(ci.cd * (1 + slow), 2)
+    if run.stage >= BLOOD_MOON_STAGE:          # Blood Moon: every enemy is enraged
+        e.crit += BLOOD_MOON_CRIT
+        for ci in e.items:
+            ci.cd = round(ci.cd * BLOOD_MOON_SPEED, 2)
     e.curse += p.start_curse
     p.curse += e.start_curse
     return Battle(p, e, seed)

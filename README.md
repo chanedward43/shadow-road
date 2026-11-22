@@ -30,8 +30,9 @@ python main.py
   that is charged but can't pay glows teal and waits. Food, Matcha Tea, Ginseng, Waraji and the
   Breathing Scroll keep it flowing. The top of the battle shows **Fight time**: the battle's own clock,
   the same at any speed (fatigue starts at 25s). At 2x/4x it also shows how long you actually watched.
-- **Match History** (title screen, and after every run): every finished run with its path, final kit,
-  techniques and what killed you. Click a class to filter, and **Play this seed** to retry the same
+- **Match History** (title screen, and after every run): **Adventure** and **Arena** tabs. Adventure runs
+  (story and endless) show the path, final kit, techniques and what killed you; Arena runs show every
+  fight (hover a round for the opponent), wins, losses and your final kit. Click a class to filter, and **Play this seed** to retry the same
   map. On the website it is stored in your browser, so it survives game updates (but not clearing
   your browser's site data); on desktop it is in `%APPDATA%\ShadowRoad`.
 - Every new run gets a random seed (from the clock and your mouse position).
@@ -45,6 +46,16 @@ python main.py
 | Train the AI and re-balance | `pip install numpy` then `python tools/balance.py --autotune` |
 
 Game design, research notes and balance details are in [DESIGN.md](DESIGN.md).
+
+## Endless mode
+Pick **Endless** (bottom-right of the class select). It plays like Story until Lord Ashura or Orochi falls,
+then the road goes on: **stage 4 Yomi Pass**, **stage 5 Blood Moon over Kyō** (a big difficulty jump, and
+every enemy is enraged: +10% crit, items 10% faster), then **The Endless Night** - harder every stage.
+New yokai join the pools (Gaki, Nurikabe, Kasha, Onryō, Yamauba, Ittan-momen), plus the elites Ushi-oni
+and Raijū and three new villains: **Shuten-dōji**, **Tamamo-no-Mae** and **Enma, King of Yomi**.
+From stage 4 you gain *Second Wind* (max HP each stage), two new late-game techniques per class unlock, and
+Samurai/Sōhei get endless passives (they scaled worst in testing). Match History shows how deep you got.
+`python tools/endless_report.py` measures how far the trained AI gets per class.
 
 ## Arena (online ghost PvP)
 **Arena (online)** on the title screen: shop and arrange your kit each round, then fight the

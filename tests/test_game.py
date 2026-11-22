@@ -109,8 +109,10 @@ class TestContent(unittest.TestCase):
         for cid, ch in data.CHARACTERS.items():
             with self.subTest(cls=cid):
                 self.assertTrue(has_art(cid))
-                techs = [t for t, d in data.TECHNIQUES.items() if d["cls"] == cid]
+                techs = [t for t, d in data.TECHNIQUES.items() if d["cls"] == cid and not d.get("endless")]
                 self.assertEqual(len(techs), 6)
+                late = [t for t, d in data.TECHNIQUES.items() if d["cls"] == cid and d.get("endless")]
+                self.assertEqual(len(late), 2, "two endless techniques per class")
                 own = [i for i, d in data.ITEMS.items() if d["cls"] == cid]
                 self.assertGreaterEqual(len(own), 10, "each class needs its own item pool")
                 r = RunState(cid, seed=1)
@@ -564,6 +566,77 @@ class TestArena(unittest.TestCase):
         self.assertEqual(len(online.clean_name("x" * 40)), 14)
 
 
+class TestEndless(unittest.TestCase):
+    def test_endless_stages_exist_and_get_harder(self):
+        self.assertEqual(sorted(data.STAGES), [1, 2, 3], "iterating STAGES still means the story")
+        for n in range(4, 12):
+            st = data.STAGES[n]
+            self.assertTrue(st["endless"])
+            for e in st["fights"] + st["elites"] + st["bosses"]:
+                self.assertIn(e, data.ENEMIES)
+                self.assertTrue(has_art(e), e)
+        for e in ("shuten_doji", "tamamo", "enma"):
+            self.assertEqual(data.enemy_tier(e), "boss")
+            self.assertTrue(has_art(data.ENEMY_LOOT[e]))
+        mults = [data.endless_mult(n) for n in range(4, 9)]
+        self.assertTrue(all(b > a for a, b in zip(mults, mults[1:])))
+        jump = data.endless_mult(5) / data.endless_mult(4)
+        self.assertGreater(jump, data.endless_mult(4) / 1.0, "stage 5 is a bigger jump than stage 4")
+
+    def test_endless_run_continues_and_story_seeds_unchanged(self):
+        story, endless = RunState("ninja", 77), RunState("ninja", 77, mode="endless")
+        self.assertEqual(story.fight_pool, endless.fight_pool)
+        self.assertEqual(story.map, endless.map)
+        for _ in range(3):
+            endless.next_stage()
+        self.assertEqual(endless.stage, 4)
+        self.assertIn(endless.boss_id(), data.STAGES[4]["bosses"])
+        hp = endless.max_hp
+        endless.next_stage()
+        self.assertGreater(endless.max_hp, hp, "Second Wind")
+        self.assertNotEqual(endless.boss_of[5], endless.boss_of[4], "no same villain twice in a row")
+        self.assertGreater(endless.enemy_scale("boss"), RunState("ninja", 77).enemy_scale("boss") * 1.5)
+        self.assertTrue(any(TECHNIQUES_ENDLESS(t) for t in endless.technique_choices(20)))
+        self.assertFalse(any(TECHNIQUES_ENDLESS(t) for t in story.technique_choices(20)))
+        save.save_run(endless)
+        back = save.load_run()
+        self.assertEqual((back.mode, back.stage, back.boss_of[5]), ("endless", 5, endless.boss_of[5]))
+        save.clear_run()
+
+    def test_blood_moon_enrages_enemies(self):
+        r = RunState("samurai", 3, mode="endless")
+        b4 = make_battle(r, "gaki", 1.0, seed=1)
+        r.stage = 5
+        b5 = make_battle(r, "gaki", 1.0, seed=1)
+        self.assertGreater(b5.f[1].crit, b4.f[1].crit)
+        self.assertLess(b5.f[1].items[0].cd, b4.f[1].items[0].cd)
+
+    def test_endless_sim_goes_past_stage_3(self):
+        deep = [play("onmyoji", s, RandomPolicy(random.Random(s)), endless=True, max_stage=6)["stage"]
+                for s in range(40)]
+        self.assertTrue(all(1 <= d <= 6 for d in deep))
+
+    def test_arena_history(self):
+        from roguegame import arena, history, storage
+        storage.delete(history.ARENA_KEY)
+        run = arena.new_run("kunoichi", 3)
+        for won in (True, False, True):
+            arena.start_round(run)
+            arena.apply_result(run, won, arena.bot_record("sohei", run.arena["round"], 1))
+        rec = history.record_arena(run)
+        runs = history.load_arena()
+        self.assertEqual(runs[0], rec)
+        self.assertEqual([f["won"] for f in rec["fights"]], [True, False, True])
+        self.assertEqual(rec["fights"][0]["vs_cls"], "sohei")
+        self.assertTrue(rec["fights"][0]["bot"])
+        self.assertEqual(history.arena_summary(runs)["per_class"]["kunoichi"]["best"], 2)
+        storage.delete(history.ARENA_KEY)
+
+
+def TECHNIQUES_ENDLESS(tid):
+    return bool(data.TECHNIQUES[tid].get("endless"))
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame
@@ -575,7 +648,8 @@ class TestScreens(unittest.TestCase):
                    scenes.InventoryScene(g, "shop", offers=g.run.shop_offers(), on_done=lambda: None),
                    scenes.TechniqueScene(g, then=lambda: None), scenes.RestScene(g),
                    scenes.EventScene(g, EVENTS[0]), scenes.BattleScene(g, "ashura", "boss"), scenes.EndScene(g, True),
-                   scenes.MatchHistoryScene(g), scenes.ArenaLobbyScene(g)]
+                   scenes.MatchHistoryScene(g), scenes.MatchHistoryScene(g, tab="arena"),
+                   scenes.ArenaLobbyScene(g)]
         for sc in screens:
             with self.subTest(screen=type(sc).__name__):
                 g.change(sc)

@@ -9,7 +9,7 @@ import time
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
                    TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL,
-                   SIGNATURE_DROP_CHANCE, enemy_tier)
+                   SIGNATURE_DROP_CHANCE, enemy_tier, endless_mult, BLOOD_MOON_STAGE)
 from .inventory import Grid, ItemInst
 
 MAP_ROWS = 6
@@ -67,7 +67,8 @@ def fresh_seed(extra=0):
 
 
 class RunState:
-    def __init__(self, char_id, seed=None):
+    def __init__(self, char_id, seed=None, mode="story"):
+        self.mode = mode         # "story" (3 stages) or "endless" (keeps going after stage 3)
         self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
@@ -100,7 +101,9 @@ class RunState:
 
     # ---------------- techniques (permanent upgrades)
     def technique_choices(self, n=3):
-        pool = [t for t, d in TECHNIQUES.items() if d["cls"] == self.char_id and t not in self.techniques]
+        late = self.stage >= 4                       # endless techniques only from endless stage 4 on
+        pool = [t for t, d in TECHNIQUES.items() if d["cls"] == self.char_id and t not in self.techniques
+                and (late or not d.get("endless"))]
         return self.rng.sample(pool, min(n, len(pool)))
 
     def learn(self, tid):
@@ -112,7 +115,10 @@ class RunState:
     # ---------------- difficulty
     def enemy_scale(self, kind):
         """Stage multiplier x enemy-type multiplier x depth (+6% per map row for non-bosses)."""
-        mult = BALANCE["stage_mult"].get(self.stage, 1.0)
+        if self.stage > 3:
+            mult = BALANCE["stage_mult"].get(3, 1.0) * endless_mult(self.stage)
+        else:
+            mult = BALANCE["stage_mult"].get(self.stage, 1.0)
         mult *= {"fight": BALANCE["fight_mult"], "elite": BALANCE["elite_mult"],
                  "boss": BALANCE["boss_mult"]}.get(kind, BALANCE["fight_mult"])
         if kind == "boss" or self.pos is None:
@@ -120,7 +126,27 @@ class RunState:
         return mult * (1.0 + ROW_SCALING * self.pos[0])
 
     def boss_id(self, stage=None):
+        self.ensure_stage(stage or self.stage)
         return self.boss_of[stage or self.stage]
+
+    @property
+    def endless(self):
+        return self.mode == "endless"
+
+    @property
+    def blood_moon(self):
+        return self.stage >= BLOOD_MOON_STAGE
+
+    def ensure_stage(self, n):
+        """Endless stages pick their cast when you get there (own rng: story seeds stay identical).
+        The villain is never the same one as the stage before."""
+        if n in self.fight_pool:
+            return
+        rng = random.Random(f"{self.seed}:endless:{n}")
+        st = STAGES[n]
+        self.fight_pool[n] = rng.sample(st["fights"], min(FIGHTS_PER_RUN, len(st["fights"])))
+        prev = self.boss_of.get(n - 1)
+        self.boss_of[n] = rng.choice([b for b in st["bosses"] if b != prev] or st["bosses"])
 
     # ---------------- map
     def available_nodes(self):
@@ -143,6 +169,12 @@ class RunState:
 
     def next_stage(self):
         self.stage += 1
+        self.ensure_stage(self.stage)
+        if self.stage >= 4:                              # Second Wind (endless)
+            from .data import ENDLESS_STAGE_HP
+            gain = ENDLESS_STAGE_HP.get(self.char_id, 8)
+            self.max_hp += gain
+            self.hp += gain
         self.map = gen_map(self.rng, self.stage)
         self.pos = None
         self.hp = min(self.max_hp, self.hp + int(self.max_hp * 0.3))
@@ -221,6 +253,7 @@ class RunState:
             return self.boss_id()
         if kind == "elite":
             return self.rng.choice(st["elites"])
+        self.ensure_stage(self.stage)
         return self.rng.choice(self.fight_pool[self.stage])
 
     def add_item(self, iid, level=1):

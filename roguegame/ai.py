@@ -19,7 +19,7 @@ from .sim import STOP, play
 KINDS = ["fight", "elite", "shop", "rest", "treasure", "event", "boss"]
 TAGS = ["weapon", "armor", "food", "poison", "fire", "charm", "tool", "scroll", "summon", "curse", "ki"]
 EVENT_OPTS = [f"{e['id']}:{i}" for e in EVENTS for i in range(len(e["options"]))]
-TECHS = list(TECHNIQUES)
+TECHS = [t for t, d in TECHNIQUES.items() if not d.get("endless")]   # endless ones: no feature (zeros)
 
 
 def _state(run):
@@ -94,7 +94,8 @@ def event_features(label, run):
 
 def tech_features(tid, run):
     f = np.zeros(len(TECHS))
-    f[TECHS.index(tid)] = 1.0
+    if tid in TECHS:
+        f[TECHS.index(tid)] = 1.0
     return f
 
 

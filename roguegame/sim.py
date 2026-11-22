@@ -71,9 +71,10 @@ def pack(run, merge=True):
 
 
 # ---------------------------------------------------------------- one run
-def play(char_id, seed, policy, log=None):
-    """Play a full run. Returns a summary dict. `log` (list) receives (kind, options, choice) tuples."""
-    run = RunState(char_id, seed)
+def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
+    """Play a full run. Returns a summary dict. `log` (list) receives (kind, options, choice) tuples.
+    endless=True keeps going after stage 3 (until death or max_stage)."""
+    run = RunState(char_id, seed, mode="endless" if endless else "story")
     out = dict(char=char_id, seed=seed, win=False, stage=1, died_to=None, battles=0,
                encounters=[], picks=[], offered=[])
 
@@ -130,6 +131,7 @@ def play(char_id, seed, policy, log=None):
             if kind == "boss":
                 if run.stage >= 3:
                     out["win"] = True
+                if (run.stage >= 3 and not endless) or run.stage >= max_stage:
                     break
                 run.next_stage()
         elif kind == "shop":

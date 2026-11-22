@@ -70,7 +70,12 @@ def apply_result(run, won, opponent=None):
         a["wins"] += 1
     else:
         a["losses"] += 1
-    a["history"].append(dict(round=a["round"], won=bool(won), vs=opponent))
+    if isinstance(opponent, dict):          # a ghost record: keep who it was
+        a["history"].append(dict(round=a["round"], won=bool(won), vs=opponent.get("name"),
+                                 vs_cls=opponent.get("cls"), bot=bool(opponent.get("bot")),
+                                 vs_record=f"{opponent.get('wins', 0)}-{opponent.get('losses', 0)}"))
+    else:
+        a["history"].append(dict(round=a["round"], won=bool(won), vs=opponent))
     if a["wins"] >= MAX_WINS:
         return "champion"
     if a["losses"] >= HEARTS:

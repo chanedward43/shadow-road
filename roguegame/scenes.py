@@ -7,7 +7,8 @@ import pygame
 
 from . import ui
 from .ui import W, H, text, text_block, panel, Button
-from .data import ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE, sell_value
+from .data import (ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE, sell_value,
+                   ENDLESS_STAGE_HP, ENDLESS_PASSIVES, BLOOD_MOON_STAGE)
 from . import save, history, arena, online
 from .version import VERSION
 from .run import RunState, fresh_seed
@@ -73,7 +74,9 @@ def top_bar(s, run, title=""):
         draw_hearts(s, (800, 24), arena.hearts(run))
     else:
         st = STAGES[run.stage]
-        text(s, f"Stage {run.stage}/3 - {st['name']}", (460, 11), 20, ui.TEXT, True)
+        label = f"Endless {run.stage}" if getattr(run, "mode", "story") == "endless" else f"Stage {run.stage}/3"
+        col = (240, 90, 90) if run.stage >= BLOOD_MOON_STAGE else ui.TEXT
+        text(s, f"{label} - {st['name']}", (460, 11), 20, col, True)
     if title:
         text(s, title, (W - 130, 11), 20, ui.DIM, True, right=True)
 
@@ -146,6 +149,14 @@ class CharSelectScene(Scene):
         self.begin = Button((W // 2 - 140, 640, 280, 54), "Set Out", self.start, 24, enabled=False)
         back = (lambda: game.change(ArenaLobbyScene(game))) if arena_mode else (lambda: game.change(TitleScene(game)))
         self.buttons = [self.begin, Button((20, 650, 120, 44), "Back", back)]
+        self.mode = "story"
+        if not arena_mode:
+            self.mode_btns = [Button((W - 340, 645, 150, 44), "Story", lambda: self.set_mode("story"), 18),
+                              Button((W - 180, 645, 160, 44), "Endless", lambda: self.set_mode("endless"), 18)]
+            self.buttons += self.mode_btns
+
+    def set_mode(self, mode):
+        self.mode = mode
 
     def start(self):
         mx, my = pygame.mouse.get_pos()
@@ -154,7 +165,7 @@ class CharSelectScene(Scene):
             self.game.run = arena.new_run(self.ids[self.sel], fresh_seed(extra))
             self.game.change(arena_next_round(self.game))
             return
-        self.game.run = RunState(self.ids[self.sel], seed=fresh_seed(extra))
+        self.game.run = RunState(self.ids[self.sel], seed=fresh_seed(extra), mode=self.mode)
         self.game.change(StageScene(self.game, first=True))
 
     def handle(self, ev):
@@ -171,6 +182,12 @@ class CharSelectScene(Scene):
         s.fill(ui.BG)
         text(s, "Choose your Arena fighter" if self.arena_mode else "Choose your path", (W // 2, 45), 34,
              ui.TEXT, True, center=True)
+        if not self.arena_mode:
+            for b in self.mode_btns:
+                b.col = (80, 70, 40) if b.label.lower() == self.mode else ui.PANEL2
+            hint = ("3 stages, then Lord Ashura." if self.mode == "story" else
+                    "Beat stage 3, then keep going. Stage 5 brings the Blood Moon.")
+            text(s, hint, (W - 20, 627), 13, ui.GOLD if self.mode == "endless" else ui.DIM, right=True)
         for i, (cid, r) in enumerate(zip(self.ids, self.cards)):
             ch = CHARACTERS[cid]
             hover = r.collidepoint(pygame.mouse.get_pos())
@@ -991,7 +1008,7 @@ class BattleScene(Scene):
         gold = run.gold_reward(self.kind)
         rolled = run.roll_drop(self.enemy_id, self.ef.carried)
         drop, dlvl, signature = rolled if rolled else (None, 1, False)
-        if self.kind == "boss" and run.stage >= 3:
+        if self.kind == "boss" and run.stage >= 3 and run.mode != "endless":
             g.change(EndScene(g, True))
             return
 
@@ -1306,7 +1323,11 @@ class BattleScene(Scene):
                  center=True)
         else:
             head = {"fight": "Battle", "elite": "ELITE Battle", "boss": "BOSS BATTLE"}[self.kind]
-            text(s, f"{head}  -  Stage {self.run.stage}", (W // 2, 18), 22, ui.GOLD, True, center=True)
+            stage = self.run.stage
+            where = f"Endless {stage}" if stage > 3 else f"Stage {stage}"
+            moon = stage >= BLOOD_MOON_STAGE
+            text(s, f"{head}  -  {where}" + ("  -  BLOOD MOON" if moon else ""), (W // 2, 18), 22,
+                 (240, 90, 90) if moon else ui.GOLD, True, center=True)
         # Fight time is the battle's own clock: the same number at any speed (fatigue starts at 25s).
         clock = f"Fight time {self.battle.t:.1f}s"
         if self.speed != 1:
@@ -1392,7 +1413,7 @@ class StageScene(Scene):
         self.run = game.run
         self.first = first
         self.t = 0
-        self.buttons = [Button((W // 2 - 120, 520, 240, 56), "Continue",
+        self.buttons = [Button((W // 2 - 120, 560, 240, 56), "Continue",
                                lambda: game.change(MapScene(game)), 22)]
 
     def update(self, dt):
@@ -1401,15 +1422,35 @@ class StageScene(Scene):
     def draw(self, s):
         s.fill(ui.BG)
         draw_petals(s, self.t, 25)
-        st = STAGES[self.run.stage]
-        boss = ENEMIES[self.run.boss_id()]
-        text(s, f"STAGE {self.run.stage}", (W // 2, 200), 30, ui.DIM, True, center=True)
-        text(s, st["name"], (W // 2, 265), 56, ui.GOLD, True, center=True)
+        run = self.run
+        st = STAGES[run.stage]
+        boss = ENEMIES[run.boss_id()]
+        moon = run.stage >= BLOOD_MOON_STAGE
+        if moon:                                       # the Blood Moon
+            pygame.draw.circle(s, (120, 20, 25), (W // 2, 100), 72)
+            pygame.draw.circle(s, (170, 35, 40), (W // 2, 100), 60)
+        if run.mode == "endless" and run.stage == 3:
+            text(s, "ENDLESS - beat this villain and the road goes on", (W // 2, 160), 16, ui.GOLD, True,
+                 center=True)
+        label = f"ENDLESS STAGE {run.stage}" if run.stage > 3 else f"STAGE {run.stage}"
+        text(s, label, (W // 2, 200), 30, (240, 110, 110) if moon else ui.DIM, True, center=True)
+        text(s, st["name"], (W // 2, 265), 56, (240, 80, 80) if moon else ui.GOLD, True, center=True)
         text(s, st["subtitle"], (W // 2, 325), 20, ui.DIM, center=True)
         text(s, f"Rumours speak of {boss['name']}.", (W // 2, 380), 20, ui.RED, True, center=True)
         text_block(s, boss.get("desc", ""), (W // 2 - 300, 412), 600, 16, ui.DIM)
+        y = 470
         if not self.first:
-            text(s, "You recovered 30% HP on the journey.", (W // 2, 480), 16, ui.GREEN, center=True)
+            msg = "You recovered 30% HP on the journey."
+            if run.stage >= 4:
+                msg += f"  Second Wind: +{ENDLESS_STAGE_HP.get(run.char_id, 8)} max HP."
+            text(s, msg, (W // 2, y), 16, ui.GREEN, center=True)
+            y += 22
+        if run.stage == BLOOD_MOON_STAGE:
+            text(s, "THE BLOOD MOON RISES: enemies are much stronger, crit 10% more and act 10% faster.",
+                 (W // 2, y), 16, (240, 90, 90), True, center=True)
+            y += 22
+        if run.stage >= 4 and run.char_id in ENDLESS_PASSIVES:
+            text(s, ENDLESS_PASSIVES[run.char_id], (W // 2, y), 15, ui.GOLD, center=True)
         self.draw_buttons(s)
 
 
@@ -1430,6 +1471,10 @@ class EndScene(Scene):
         if self.won:
             text(s, "VICTORY", (W // 2, 230), 90, ui.GOLD, True, center=True)
             text(s, "Lord Ashura falls. Dawn returns to the land.", (W // 2, 320), 22, ui.TEXT, center=True)
+        elif self.run.mode == "endless":
+            text(s, "THE ROAD ENDS", (W // 2, 230), 80, ui.RED, True, center=True)
+            text(s, f"Endless: you reached stage {self.run.stage} - {STAGES[self.run.stage]['name']}.",
+                 (W // 2, 320), 22, ui.GOLD if self.run.stage >= 4 else ui.DIM, center=True)
         else:
             text(s, "FALLEN", (W // 2, 230), 90, ui.RED, True, center=True)
             text(s, "Your journey ends here. Another will take up the blade.", (W // 2, 320), 22, ui.DIM,
@@ -1502,17 +1547,28 @@ class MatchHistoryScene(Scene):
     ROW_H = 58
     LIST = pygame.Rect(20, 118, 430, 520)
 
-    def __init__(self, game):
+    def __init__(self, game, tab="adventure"):
         super().__init__(game)
-        self.runs = history.load_history()
-        self.sum = history.summary(self.runs)
-        self.sel = 0
-        self.scroll = 0
-        self.filter = None               # class id, or None for all
-        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)]
+        self.tab_btns = [Button((W - 330, 14, 150, 38), "Adventure", lambda: self.set_tab("adventure"), 17),
+                         Button((W - 172, 14, 150, 38), "Arena", lambda: self.set_tab("arena"), 17)]
+        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)] + \
+            self.tab_btns
         self.seed_btn = Button((W - 250, 650, 230, 48), "Play this seed", self.play_seed, 20)
         self.class_chips = []            # (rect, class id or None)
+        self.set_tab(tab)
+
+    def set_tab(self, tab):
+        self.tab = tab
+        if tab == "arena":
+            self.runs = history.load_arena()
+            self.sum = history.arena_summary(self.runs)
+        else:
+            self.runs = history.load_history()
+            self.sum = history.summary(self.runs)
+        self.sel, self.scroll, self.filter = 0, 0, None
         self.kit_cache = {}
+        for b in self.tab_btns:
+            b.col = (80, 70, 40) if b.label.lower() == tab else ui.PANEL2
 
     def shown(self):
         return [r for r in self.runs if self.filter in (None, r["char"])]
@@ -1524,11 +1580,11 @@ class MatchHistoryScene(Scene):
     def play_seed(self):
         r = self.current()
         if r:
-            self.game.run = RunState(r["char"], seed=r["seed"])
+            self.game.run = RunState(r["char"], seed=r["seed"], mode=r.get("mode", "story"))
             self.game.change(StageScene(self.game, first=True))
 
     def handle(self, ev):
-        if self.current() and self.seed_btn.handle(ev):
+        if self.tab == "adventure" and self.current() and self.seed_btn.handle(ev):
             return True
         if super().handle(ev):
             return True
@@ -1558,6 +1614,23 @@ class MatchHistoryScene(Scene):
     def draw_header(self, s):
         text(s, "Match History", (20, 14), 34, ui.GOLD, True)
         sm = self.sum
+        if self.tab == "arena":
+            avg = f"{sm['avg_wins']:.1f}" if sm["runs"] else "-"
+            text(s, f"{sm['runs']} Arena runs   -   {sm['champions']} champions   -   average {avg} wins",
+                 (300, 24), 18, ui.TEXT, True)
+            self.class_chips = []
+            x = 20
+            for cid, ch in CHARACTERS.items():
+                pc = sm["per_class"].get(cid)
+                label = f"{ch['name']}  best {pc['best']} wins" if pc else f"{ch['name']}  no runs"
+                w = ui.font(14, True).size(label)[0] + 22
+                r = pygame.Rect(x, 66, w, 32)
+                on = self.filter == cid
+                panel(s, r, (60, 52, 36) if on else ui.PANEL, ui.GOLD if on else ch["color"], radius=6)
+                text(s, label, (r.x + 11, r.y + 8), 14, ch["color"] if pc else ui.DIM, True)
+                self.class_chips.append((r, cid))
+                x = r.right + 8
+            return
         rate = f"{100 * sm['wins'] / sm['runs']:.0f}%" if sm["runs"] else "-"
         line = f"{sm['runs']} runs   -   {sm['wins']} wins ({rate})"
         if sm["streak"]:
@@ -1583,7 +1656,8 @@ class MatchHistoryScene(Scene):
         panel(s, self.LIST.inflate(8, 8), (26, 24, 34), ui.LINE)
         rows = self.shown()
         if not rows:
-            text(s, "No finished runs yet." if not self.runs else "No runs with this class.",
+            text(s, ("No finished Arena runs yet." if self.tab == "arena" else "No finished runs yet.")
+                 if not self.runs else "No runs with this class.",
                  (self.LIST.centerx, self.LIST.y + 40), 18, ui.DIM, center=True)
             return
         for k in range(self.LIST.height // self.ROW_H):
@@ -1594,11 +1668,27 @@ class MatchHistoryScene(Scene):
             ch = CHARACTERS[r["char"]]
             box = pygame.Rect(self.LIST.x, self.LIST.y + k * self.ROW_H, self.LIST.width, self.ROW_H - 4)
             pygame.draw.rect(s, (70, 60, 40) if i == self.sel else (38, 34, 44), box, border_radius=6)
-            pygame.draw.rect(s, ui.GOLD if r["won"] else (150, 60, 60), (box.x, box.y, 5, box.height),
+            pygame.draw.rect(s, ui.GOLD if r.get("won") else (150, 60, 60), (box.x, box.y, 5, box.height),
                              border_radius=3)
             ui.portrait(s, (box.x + 32, box.centery), 21, ch["color"], ch["glyph"], ch["portrait"], key=r["char"])
+            if self.tab == "arena":
+                good = r["champion"]
+                pygame.draw.rect(s, ui.GOLD if good else (150, 60, 60), (box.x, box.y, 5, box.height),
+                                 border_radius=3)
+                res = "CHAMPION - 10 wins" if good else f"{r['wins']} wins  -  {r['losses']} losses"
+                text(s, res, (box.x + 62, box.y + 7), 17, ui.GOLD if good else (230, 170, 120), True)
+                text(s, ch["name"], (box.right - 10, box.y + 8), 14, ch["color"], True, right=True)
+                text(s, f"{history.fmt_date(r['date'])}   -   {r['rounds']} rounds   -   {r.get('game', '')}",
+                     (box.x + 62, box.y + 31), 13, ui.DIM)
+                continue
+            endless = r.get("mode") == "endless"
             if r["won"]:
                 res, col = "VICTORY", ui.GOLD
+            elif endless:
+                res = f"Endless  -  stage {r['stage']}, floor {r['row']}"
+                col = ui.GOLD if r["stage"] >= 4 else (230, 130, 130)
+                pygame.draw.rect(s, (200, 60, 200) if r["stage"] >= 4 else (150, 60, 60),
+                                 (box.x, box.y, 5, box.height), border_radius=3)
             else:
                 res, col = f"Stage {r['stage']}  -  floor {r['row']}", (230, 130, 130)
             text(s, res, (box.x + 62, box.y + 7), 17, col, True)
@@ -1628,11 +1718,16 @@ class MatchHistoryScene(Scene):
         text(s, "PATH", (area.x, area.y), 14, ui.DIM, True)
         y = area.y + 22
         last = len(r["path"]) - 1
-        for stage in (1, 2, 3):
+        stages = sorted({p["stage"] for p in r["path"]})
+        if len(stages) > 4:                  # long endless runs: only the last 4 stages fit
+            text(s, f"(stages 1-{stages[-5]} hidden)", (area.x + 60, area.y), 12, ui.DIM)
+            stages = stages[-4:]
+        for stage in stages:
             nodes = [(i, p) for i, p in enumerate(r["path"]) if p["stage"] == stage]
             if not nodes:
                 continue
-            text(s, f"S{stage}", (area.x, y + 4), 14, ui.TEXT, True)
+            text(s, f"S{stage}", (area.x, y + 4), 14, (240, 90, 90) if stage >= BLOOD_MOON_STAGE else ui.TEXT,
+                 True)
             x = area.x + 32
             for i, p in nodes:
                 col = NODE_STYLE.get(p["kind"], ((120, 120, 120), ""))[0]
@@ -1659,11 +1754,19 @@ class MatchHistoryScene(Scene):
             text(s, "Finish a run and it will show up here - even after the game updates.",
                  (area.centerx, area.centery), 18, ui.DIM, center=True)
             return None
+        if self.tab == "arena":
+            return self.draw_arena_detail(s, r, area)
         ch = CHARACTERS[r["char"]]
         x0, y0 = area.x + 20, area.y + 16
-        text(s, ch["name"], (x0, y0), 26, ch["color"], True)
-        res = "VICTORY - Lord Ashura falls" if r["won"] else f"Fell on stage {r['stage']}, floor {r['row']}"
-        text(s, res, (x0, y0 + 32), 18, ui.GOLD if r["won"] else (230, 130, 130), True)
+        text(s, ch["name"] + ("  -  Endless" if r.get("mode") == "endless" else ""), (x0, y0), 26, ch["color"],
+             True)
+        if r["won"]:
+            res = "VICTORY - Lord Ashura falls"
+        elif r.get("mode") == "endless":
+            res = f"Endless: fell on stage {r['stage']} ({STAGES[r['stage']]['name']}), floor {r['row']}"
+        else:
+            res = f"Fell on stage {r['stage']}, floor {r['row']}"
+        text(s, res, (x0, y0 + 32), 18, ui.GOLD if r["won"] or r["stage"] >= 4 else (230, 130, 130), True)
         text(s, f"{history.fmt_date(r['date'])}   -   {history.fmt_duration(r['duration'])}   -   "
                 f"seed {r['seed']}   -   {r.get('game', 'before versions')}", (x0, y0 + 56), 13, ui.DIM)
         stats = [("Battles won", r["battles"]), ("Elites", r["elites"]), ("Bosses", r["bosses"]),
@@ -1681,8 +1784,9 @@ class MatchHistoryScene(Scene):
             text_block(s, ENEMIES[r["killed_by"]]["name"], (kx + 66, y0 + 32), 130, 15, (240, 140, 140), bold=True)
         self.path_tip = None
         py = self.draw_path(s, r, pygame.Rect(x0, y0 + 132, 500, 120))
-        # final kit
-        ky = max(py + 8, y0 + 250)
+        return self.draw_kit_and_techniques(s, r, area, x0, max(py + 8, y0 + 250))
+
+    def draw_kit_and_techniques(self, s, r, area, x0, ky):
         text(s, "FINAL KIT", (x0, ky), 14, ui.DIM, True)
         g = self.kit_grid(r)
         cell = min(42, (area.bottom - ky - 34) // max(1, g.h))
@@ -1711,13 +1815,47 @@ class MatchHistoryScene(Scene):
                 ty = text_block(s, t["desc"], (tx, ty), area.right - tx - 16, 12, ui.DIM) + 6
         return tip
 
+    def draw_arena_detail(self, s, r, area):
+        ch = CHARACTERS[r["char"]]
+        x0, y0 = area.x + 20, area.y + 16
+        text(s, ch["name"] + "  -  Arena", (x0, y0), 26, ch["color"], True)
+        res = "CHAMPION - 10 wins" if r["champion"] else f"Out of hearts after {r['wins']} wins"
+        text(s, res, (x0, y0 + 32), 18, ui.GOLD if r["champion"] else (230, 130, 130), True)
+        text(s, f"{history.fmt_date(r['date'])}   -   {history.fmt_duration(r['duration'])}   -   {r.get('game', '')}",
+             (x0, y0 + 56), 13, ui.DIM)
+        real = sum(1 for f in r["fights"] if not f.get("bot"))
+        stats = [("Wins", r["wins"]), ("Losses", r["losses"]), ("Rounds", r["rounds"]), ("Max HP", r["max_hp"]),
+                 ("vs players", real)]
+        sx = x0
+        for label, val in stats:
+            text(s, str(val), (sx, y0 + 80), 22, ui.TEXT, True)
+            text(s, label, (sx, y0 + 106), 12, ui.DIM)
+            sx += 112
+        text(s, "FIGHTS  (hover for the opponent)", (x0, y0 + 132), 14, ui.DIM, True)
+        mouse = pygame.mouse.get_pos()
+        self.path_tip = None
+        for i, f in enumerate(r["fights"]):
+            box = pygame.Rect(x0 + i * 38, y0 + 156, 32, 32)
+            pygame.draw.rect(s, ui.GOLD if f["won"] else (150, 60, 60), box, border_radius=5)
+            text(s, str(f["round"]), box.center, 14, (20, 16, 20), True, center=True)
+            if f.get("vs_cls") in CHARACTERS:     # a small class-colour bar: who you fought
+                pygame.draw.rect(s, CHARACTERS[f["vs_cls"]]["color"], (box.x + 3, box.bottom - 6, box.w - 6, 3))
+            if box.collidepoint(mouse):
+                who = f.get("vs") or "?"
+                kind = "AI ghost" if f.get("bot") else "player"
+                cls = CHARACTERS.get(f.get("vs_cls"), {}).get("name", "")
+                rec = f", {f['vs_record']} at the time" if f.get("vs_record") else ""
+                self.path_tip = (f"Round {f['round']}: {'beat' if f['won'] else 'lost to'} {who} "
+                                 f"({cls} {kind}{rec})")
+        return self.draw_kit_and_techniques(s, r, area, x0, y0 + 210)
+
     def draw(self, s):
         s.fill(ui.BG)
         self.draw_header(s)
         self.draw_list(s)
         tip = self.draw_detail(s)
         self.draw_buttons(s)
-        if self.current():
+        if self.current() and self.tab == "adventure":
             self.seed_btn.draw(s)
             text(s, "Same map, shops and bosses", (W - 260, 672), 13, ui.DIM, right=True)
         mouse = pygame.mouse.get_pos()
@@ -1915,7 +2053,7 @@ class ArenaMatchScene(Scene):
         g, run, opp = self.game, self.run, self.opp
 
         def result(won):
-            state = arena.apply_result(run, won, opp["name"])
+            state = arena.apply_result(run, won, opp)
             g.change(ArenaResultScene(g, won, opp, state))
         g.change(BattleScene(g, None, "pvp", ghost=self.opp_run, ghost_rec=opp, on_result=result))
 
@@ -1978,10 +2116,13 @@ class ArenaEndScene(Scene):
         self.profile = online.profile()
         self.rec = arena.score_record(run, self.profile)
         self.new_best = online.record_best(self.rec)
+        history.record_arena(run)
         self.req = online.submit_score(self.rec) if online.enabled() else None
-        self.buttons = [Button((W // 2 - 280, 600, 260, 56), "Arena lobby",
+        self.buttons = [Button((W // 2 - 420, 600, 260, 56), "Arena lobby",
                                lambda: game.change(ArenaLobbyScene(game)), 22),
-                        Button((W // 2 + 20, 600, 260, 56), "Main menu",
+                        Button((W // 2 - 130, 600, 260, 56), "Match History",
+                               lambda: game.change(MatchHistoryScene(game, tab="arena")), 22),
+                        Button((W // 2 + 160, 600, 260, 56), "Main menu",
                                lambda: game.change(TitleScene(game)), 22)]
 
     def draw(self, s):

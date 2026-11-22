@@ -952,3 +952,196 @@ for _iid, _g in (("onigiri", 1), ("sake_gourd", 1), ("bento_box", 1)):
 CHARACTERS["ninja"]["passive"] = (
     "Shinobi: 20% chance to evade; weapons trigger 15% faster; 6 max Stamina with 25% faster refill. "
     "Every evade or dodge primes an Ambush: +2 Block, next weapon hit deals double damage.")
+
+
+# ================================================================ v7: ENDLESS MODE
+# After Ashura or Orochi falls, Endless keeps going: stage 4, 5, 6... forever.
+#   Stage 4  Yomi Pass          - the road down to the underworld; new yokai join the stage-3 demons
+#   Stage 5  Blood Moon over Kyō - SIGNIFICANTLY harder: a big difficulty jump, and every enemy is
+#                                  Blood-Moon enraged (+10% crit, items 10% faster)
+#   Stage 6+ The Endless Night   - everything, every boss, harder every stage (Blood Moon stays)
+# Endless techniques (2 per class) are only offered from stage 4 on.
+
+# ---- enemy-only signature moves
+eitem("e_gaki_bite", "Starving Bite", cd=1.2, dmg=(4, 6), lifesteal=0.5)
+eitem("e_wall_slam", "Wall Slam", cd=3.0, dmg=(10, 14))
+eitem("e_wall_up", "Endless Wall", cd=4.0, block=18)
+eitem("e_cart_flame", "Cart of Hellfire", cd=2.2, burn=3)
+eitem("e_cat_claw", "Kasha Claws", cd=0.9, dmg=(3, 5))
+eitem("e_grudge", "Undying Grudge", cd=3.0, curse=2)
+eitem("e_wail", "Onryō's Wail", cd=2.5, hex=2)
+eitem("e_hag_cleaver", "Hag's Cleaver", cd=1.8, dmg=(6, 9))
+eitem("e_hag_brew", "Mountain Brew", cd=5.0, heal=15, poison=2)
+eitem("e_cloth_wrap", "Smothering Wrap", cd=4.0, stun=0.7)
+eitem("e_cloth_lash", "Cloth Lash", cd=1.0, dmg=(3, 4))
+eitem("e_ox_horns", "Ox Horns", cd=2.0, dmg=(9, 13))
+eitem("e_ox_venom", "Ox-Demon Venom", cd=3.0, poison=4)
+eitem("e_raiju_bolt", "Raijū Bolt", cd=1.2, dmg=(5, 7))
+eitem("e_raiju_stun", "Thunderclap", cd=5.0, stun=0.9)
+eitem("e_sake_gulp", "Gulp of Sake", cd=6.0, heal=18, block=10)
+eitem("e_oni_king_club", "Club of the Oni King", cd=2.2, dmg=(14, 18), sunder=0.2)
+eitem("e_drunken_fury", "Drunken Fury", cd=0.9, dmg=(6, 8))
+eitem("e_nine_tails", "Nine-Tail Strike", cd=1.1, dmg=(4, 6), crit=0.2)
+eitem("e_fox_charm", "Bewitching Charm", cd=4.0, curse=2, stun=0.4)
+eitem("e_foxfire_storm", "Foxfire Storm", cd=2.0, burn=4)
+eitem("e_tail_lash", "Tail Lash", cd=0.7, dmg=(4, 5))
+eitem("e_judgement", "Judgement of Enma", cd=5.0, hex=4, sunder=1.0)
+eitem("e_hell_brand", "Hell Brand", cd=1.6, dmg=(10, 13), burn=2)
+eitem("e_mirror", "Jōhari Mirror", cd=6.0, block=25, cleanse=6)
+eitem("e_yomi_chains", "Chains of Yomi", cd=3.0, dmg=(6, 8), stun=0.6)
+
+# ---- their signature drops (enemy-exclusive, like every other enemy's)
+loot("gaki_bowl", "Gaki's Empty Bowl", S1, "epic", ["armor"], cd=3.5, steal_block=6, heal=3)
+loot("nurikabe_brick", "Nurikabe Stone", SQ, "epic", ["armor"], s_block=20, s_thorns=2)
+loot("kasha_wheel", "Burning Cart Wheel", SQ, "epic", ["weapon", "fire"], cd=2.0, dmg=(4, 6), burn=2)
+loot("onryo_hair", "Onryō's Long Hair", V2, "epic", ["charm", "curse"], cd=3.5, curse=1, hex=1)
+loot("hag_cauldron", "Yamauba's Cauldron", SQ, "epic", ["food"], cd=5.0, heal=10, cleanse=3)
+loot("ittan_cloth", "Ittan-momen Cloth", H2, "rare", ["tool"], cd=5.0, dodge=1, stun=0.4)
+loot("ushi_horn", "Ushi-oni Horn", V3, "epic", ["weapon", "poison"], cd=2.4, dmg=(9, 13), poison=2)
+loot("raiju_fang", "Raijū Fang", S1, "epic", ["weapon"], cd=1.0, dmg=(3, 5), stun=0.2, crit=0.1)
+loot("shuten_gourd", "Shuten-dōji's Bottomless Gourd", V2, "legendary", ["food"], cd=5.0, heal=12, s_hp=10,
+     stamina_gain=2)
+loot("tamamo_tail", "Tail of Tamamo-no-Mae", V2, "legendary", ["charm", "curse"], cd=3.0, curse=1, hex=2,
+     s_evade=0.08)
+loot("enma_ledger", "Enma's Ledger of Sins", H2, "legendary", ["scroll", "curse"], cd=4.0, hex=3, curse=1,
+     s_block=10)
+
+ENDLESS_ENEMIES = {
+    # mobs
+    "gaki": dict(name="Gaki, the Hungry Ghost", hp=190, items=["e_gaki_bite"],
+                 desc="Never full. Every bite heals it."),
+    "nurikabe": dict(name="Nurikabe, the Living Wall", hp=260, items=["e_wall_slam", "e_wall_up"],
+                     desc="A wall that walks. Break its Block or go around it."),
+    "kasha": dict(name="Kasha, the Corpse-Cart Cat", hp=180, evade=0.15, items=["e_cart_flame", "e_cat_claw"]),
+    "onryo": dict(name="Onryō, the Vengeful", hp=170, evade=0.2, items=["e_grudge", "e_wail"],
+                  desc="Curses you, then hurts you for every Curse. Cleanse or kill fast."),
+    "yamauba": dict(name="Yamauba, the Mountain Hag", hp=200, regen=3, items=["e_hag_cleaver", "e_hag_brew"]),
+    "ittan_momen": dict(name="Ittan-momen", hp=160, evade=0.3, items=["e_cloth_wrap", "e_cloth_lash"]),
+    # elites
+    "ushi_oni": dict(name="Ushi-oni, the Ox Demon", hp=340, thorns=3, items=["e_ox_horns", "e_ox_venom"],
+                     desc="Thorns and venom: many small hits hurt you more than it."),
+    "raiju": dict(name="Raijū, the Thunder Beast", hp=300, evade=0.2, items=["e_raiju_bolt", "e_raiju_stun"],
+                  desc="Lightning-fast, and its thunderclap stuns."),
+    # bosses
+    "shuten_doji": dict(name="Shuten-dōji, King of the Oni", hp=900,
+                        items=["e_sake_gulp", "e_oni_king_club"],
+                        desc="The oni king drinks between blows. At half health he empties his gourd and rages.",
+                        phases=[dict(at=0.5, msg="Shuten-dōji drains his gourd and flies into a drunken rage!",
+                                     add=["e_drunken_fury"], speed=1.2, heal=30)]),
+    "tamamo": dict(name="Tamamo-no-Mae, the Nine-Tailed", hp=820, evade=0.18,
+                   items=["e_nine_tails", "e_fox_charm"],
+                   desc="The fox who bewitched an emperor. Her tails multiply as she weakens; each change purges "
+                        "Poison and Burn.",
+                   phases=[dict(at=0.66, msg="Tamamo-no-Mae wreathes herself in foxfire!",
+                                add=["e_foxfire_storm"], cleanse=True),
+                           dict(at=0.33, msg="Tamamo reveals all nine tails!", add=["e_tail_lash"], speed=1.2,
+                                cleanse=True)]),
+    "enma": dict(name="Enma, King of Yomi", hp=1100,
+                 items=["e_judgement", "e_hell_brand"],
+                 desc="The judge of the dead. His Judgement shatters all Block and punishes every Curse on you. "
+                      "At half health he raises his mirror and the chains of Yomi.",
+                 phases=[dict(at=0.5, msg="Enma passes judgement - the chains of Yomi rise!",
+                              add=["e_yomi_chains"], speed=1.15, heal=80, cleanse=True)]),
+}
+ENEMIES.update(ENDLESS_ENEMIES)
+ENEMY_LOOT.update({"gaki": "gaki_bowl", "nurikabe": "nurikabe_brick", "kasha": "kasha_wheel",
+                   "onryo": "onryo_hair", "yamauba": "hag_cauldron", "ittan_momen": "ittan_cloth",
+                   "ushi_oni": "ushi_horn", "raiju": "raiju_fang", "shuten_doji": "shuten_gourd",
+                   "tamamo": "tamamo_tail", "enma": "enma_ledger"})
+for _eid in ("gaki", "nurikabe", "kasha", "onryo", "yamauba", "ittan_momen", "ushi_oni", "raiju"):
+    ENEMIES[_eid]["kit"] = [(ENEMY_LOOT[_eid], 1)]
+for _eid in ("shuten_doji", "tamamo", "enma"):
+    ENEMIES[_eid]["kit"] = []
+ENEMIES["shuten_doji"]["phases"][0]["add"] = ["e_drunken_fury", "shuten_gourd"]
+ENEMIES["tamamo"]["phases"][1]["add"] = ["e_tail_lash", "tamamo_tail"]
+ENEMIES["enma"]["phases"][0]["add"] = ["e_yomi_chains", "e_mirror", "enma_ledger"]
+
+ENDLESS_REGIONS = [
+    dict(name="Yomi Pass", subtitle="The road down to the land of the dead",
+         fights=["gaki", "nurikabe", "kasha", "onryo", "oni", "possessed"], elites=["ushi_oni", "raiju"],
+         bosses=["shuten_doji", "tamamo"]),
+    dict(name="Blood Moon over Kyō", subtitle="The capital burns red. Every demon is enraged.",
+         fights=["yamauba", "ittan_momen", "kasha", "onryo", "gaki", "shadow_clan"],
+         elites=["ushi_oni", "raiju", "hannya"], bosses=["enma", "tamamo", "shuten_doji"]),
+    dict(name="The Endless Night", subtitle="Every villain you ever beat walks again - stronger.",
+         fights=["gaki", "nurikabe", "kasha", "onryo", "yamauba", "ittan_momen", "oni", "gashadokuro",
+                 "shadow_clan", "possessed", "nio_guardian", "fire_ninja"],
+         elites=["ushi_oni", "raiju", "hannya", "tengu_lord"],
+         bosses=["enma", "tamamo", "shuten_doji", "ashura", "orochi"]),
+]
+ENDLESS_RARITY = {4: {"common": 20, "rare": 42, "epic": 30, "legendary": 8},
+                  5: {"common": 12, "rare": 40, "epic": 36, "legendary": 12}}
+ENDLESS_GROWTH = 1.15        # every endless stage: enemies +15% (on top of stage 3)
+BLOOD_MOON_JUMP = 1.25       # extra x1.25 from stage 5 on
+BLOOD_MOON_STAGE = 5
+
+
+def endless_mult(n):
+    """Difficulty of endless stage n relative to stage 3."""
+    m = ENDLESS_GROWTH ** (n - 3)
+    if n >= BLOOD_MOON_STAGE:
+        m *= BLOOD_MOON_JUMP
+    return m
+
+
+def endless_stage(n):
+    region = ENDLESS_REGIONS[min(n - 4, len(ENDLESS_REGIONS) - 1)]
+    st = dict(region, mult=STAGES[3]["mult"], endless=True, blood_moon=n >= BLOOD_MOON_STAGE,
+              rarity=ENDLESS_RARITY.get(n, ENDLESS_RARITY[5]), boss=region["bosses"][0])
+    if n >= 6:
+        st["name"] = f"The Endless Night - depth {n - 5}"
+    return st
+
+
+class _Stages(dict):
+    """STAGES[1..3] are the story; asking for 4, 5, 6... builds an endless stage on the fly
+    (never stored, so `for s in STAGES` still means the three story stages)."""
+
+    def __missing__(self, n):
+        if isinstance(n, int) and n >= 4:
+            return endless_stage(n)
+        raise KeyError(n)
+
+
+STAGES = _Stages(STAGES)
+BOSS_IDS |= {"shuten_doji", "tamamo", "enma"}
+ELITE_IDS |= {"ushi_oni", "raiju"}
+
+ENDLESS_TECHNIQUES = {
+    "kensei": dict(cls="samurai", name="Sword Saint", desc="All weapons deal +4 damage and +10% crit.",
+                   weapon_dmg=4, crit=0.10),
+    "last_stand": dict(cls="samurai", name="Last Stand", desc="+30 Max HP and +20 starting Block.",
+                       max_hp=30, s_block=20),
+    "silent_killing": dict(cls="ninja", name="Silent Killing", desc="+15% crit chance and weapons deal +1 damage.",
+                           crit=0.15, weapon_dmg=1),
+    "kage_mastery": dict(cls="ninja", name="Kage Mastery", desc="Weapons trigger 20% faster and +5% evasion.",
+                         weapon_speed=0.2, evade=0.05),
+    "hundred_poisons": dict(cls="kunoichi", name="Hundred Poisons",
+                            desc="Items that Poison inflict +2 Poison; crits inflict +1 more.",
+                            item_poison=2, poison_on_crit=1),
+    "moon_dance": dict(cls="kunoichi", name="Moon Dance", desc="Enemy items 15% slower and +5% evasion.",
+                       enemy_slow=0.15, evade=0.05),
+    "pentagram": dict(cls="onmyoji", name="Seimei's Pentagram",
+                      desc="Shikigami deal +2 damage, and start with one more Paper Crane.",
+                      summon_dmg=2, extra_summon=1),
+    "curse_of_ages": dict(cls="onmyoji", name="Curse of Ages",
+                          desc="Curse items +1 Curse, shikigami Curse on hit, +10 Max HP.",
+                          item_curse=1, summon_curse=1, max_hp=10),
+    "benkei_stand": dict(cls="sohei", name="Benkei's Stand", desc="Counter-attacks +4 damage and +25 Max HP.",
+                         counter=4, max_hp=25),
+    "enlightenment": dict(cls="sohei", name="Enlightenment", desc="Start with 4 more Ki, Max Ki +4, Ki bursts "
+                                                                  "+1 damage per Ki.",
+                          ki_start=4, ki_max=4, ki_burst_bonus=1),
+}
+for _t in ENDLESS_TECHNIQUES.values():
+    _t["endless"] = True
+TECHNIQUES.update(ENDLESS_TECHNIQUES)
+
+# Second Wind: reaching each endless stage raises max HP. Samurai and Sōhei fight with flat damage and
+# soak, which scale worst against endless HP pools (measured with tools/endless_report.py), so they get more.
+ENDLESS_STAGE_HP = {"samurai": 14, "sohei": 14, "ninja": 6, "kunoichi": 8, "onmyoji": 8}
+
+ENDLESS_PASSIVES = {
+    "samurai": "Way of the Blade: weapons deal +3 damage on stage 4, +1 more every stage after.",
+    "sohei": "Unshakable: counter-attacks +3 damage and +6 starting Block per endless stage.",
+}

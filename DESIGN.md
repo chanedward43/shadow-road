@@ -325,3 +325,40 @@ Regular enemies now hit 35% harder and have 35% more HP. Elites get +15%. Bosses
 - **Item merges:** e.g. Katana + Whetstone → Honed Katana.
 - **More villains per stage,** with one picked at random each run.
 - **Online mode:** 5 lives, 10 wins, asynchronous ghosts.
+
+## Endless mode
+Story ends when the stage-3 villain falls. Endless keeps going. `STAGES[n]` for n >= 4 is generated on the fly
+(`endless_stage`), and each run picks an endless stage's cast when you arrive. That uses its own random source,
+so story seeds are unchanged. A villain never appears twice in a row.
+
+| Stage | Region | Difficulty vs stage 3 | Notes |
+|---|---|---|---|
+| 4 | Yomi Pass | x1.15 | New yokai mixed with stage-3 demons. Bosses: Shuten-dōji, Tamamo-no-Mae |
+| 5 | Blood Moon over Kyō | x1.65 | **Blood Moon**: enemies +10% crit and items 10% faster. Enma joins |
+| 6+ | The Endless Night | x1.15 per stage | Every mob, elite and villain, including Ashura and Orochi |
+
+The player scales up too:
+- Shops lean further towards epic and legendary items.
+- *Second Wind* raises max HP on every endless stage: Samurai and Sōhei +14, Kunoichi and Onmyōji +8, Ninja +6.
+- From stage 4, each class can learn 2 endless techniques.
+
+Class tuning comes from `tools/endless_report.py`, which uses the trained agents and greedy play over 400 runs per class.
+- Samurai and Sōhei passed stage 4 only 28% and 40% of the time, against about 75% for the others.
+- In a controlled test, +3 weapon damage doubled Samurai's pass rate. +40 HP barely helped.
+- So both classes got an endless passive:
+  - *Way of the Blade*: weapons +2, then +1 more per endless stage.
+  - *Unshakable*: counters +3 and +6 Block per endless stage.
+- Shuten-dōji's heals and armour break were also toned down, because they hard-countered Block classes.
+
+| Class | Pass stage 4 | Pass stage 5 (Blood Moon) |
+|---|---|---|
+| Samurai | 51% | 23% |
+| Ninja | 75% | 18% |
+| Kunoichi | 70% | 34% |
+| Onmyōji | 71% | 39% |
+| Sōhei | 60% | 10% |
+
+## Arena match history
+Every Arena run is saved, newest first, under the `arena_history` storage key (last 100 runs). Each record holds the
+result, wins and losses, rounds, final kit and techniques. It also holds every fight: the round, the result,
+the opponent's name and class, whether it was a player or an AI ghost, and their record at the time.

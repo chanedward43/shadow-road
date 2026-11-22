@@ -21,6 +21,7 @@ def record_from_run(run, won):
     return dict(
         v=HISTORY_VERSION,
         game=label(),
+        mode=getattr(run, "mode", "story"),
         date=time.time(),
         char=run.char_id,
         won=bool(won),
@@ -76,6 +77,50 @@ def summary(runs):
         if not r["won"]:
             break
         out["streak"] += 1
+    return out
+
+
+# ---------------------------------------------------------------- Arena runs (their own list)
+ARENA_KEY = "arena_history"
+
+
+def arena_record(run):
+    from .version import label
+    a = run.arena
+    return dict(v=HISTORY_VERSION, game=label(), date=time.time(), char=run.char_id, wins=a["wins"],
+                losses=a["losses"], rounds=a["round"], champion=a["wins"] >= 10,
+                duration=max(0, int(time.time() - run.started)), max_hp=run.max_hp,
+                techniques=list(run.techniques), kit=run.bag.to_dict(),
+                fights=[dict(f) for f in a["history"]])
+
+
+def load_arena():
+    try:
+        runs = json.loads(storage.read(ARENA_KEY) or "[]")
+        return [r for r in runs if isinstance(r, dict) and r.get("char") in CHARACTERS]
+    except (ValueError, TypeError):
+        return []
+
+
+def record_arena(run):
+    try:
+        rec = arena_record(run)
+    except Exception as e:          # noqa: BLE001
+        print("arena history skipped:", repr(e))
+        return None
+    runs = [rec] + load_arena()
+    storage.write(ARENA_KEY, json.dumps(runs[:MAX_RUNS], separators=(",", ":")))
+    return rec
+
+
+def arena_summary(runs):
+    out = dict(runs=len(runs), champions=sum(r["champion"] for r in runs), per_class={},
+               avg_wins=(sum(r["wins"] for r in runs) / len(runs)) if runs else 0.0)
+    for r in runs:
+        pc = out["per_class"].setdefault(r["char"], dict(runs=0, best=0, champions=0))
+        pc["runs"] += 1
+        pc["best"] = max(pc["best"], r["wins"])
+        pc["champions"] += r["champion"]
     return out
 
 

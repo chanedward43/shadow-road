@@ -37,13 +37,13 @@ def run_to_dict(run):
         boss_of={str(k): v for k, v in run.boss_of.items()},
         seen_events=run.seen_events, map=run.map, pos=list(run.pos) if run.pos else None,
         battles_won=run.battles_won, rerolls=run.rerolls, techniques=run.techniques, kills=run.kills,
-        started=run.started, path=run.path, gold_earned=run.gold_earned,
+        started=run.started, path=run.path, gold_earned=run.gold_earned, mode=run.mode,
     )
 
 
 def run_from_dict(d):
     from .run import RunState
-    run = RunState(d["char_id"], d["seed"])
+    run = RunState(d["char_id"], d["seed"], mode=d.get("mode", "story"))
     st = d["rng"]
     run.rng.setstate((st[0], tuple(st[1]), st[2]))
     for k in ("max_hp", "hp", "gold", "stage", "seen_events", "map", "battles_won", "rerolls", "techniques",

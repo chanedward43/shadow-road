@@ -21,7 +21,11 @@ python main.py
   Every tooltip shows what an item sells for (half its price, times its level).
 - **Map (M)** button on every screen (shop, rewards, events, battles): check the road ahead, then
   press M, Esc or Back to return where you were.
-- In battle: 1x / 2x / 4x speed, or Skip.
+- In battle: 1x / 2x / 4x speed, or Skip. Both kits are shown as real grids: shaded items are still
+  charging, flashes are activations, and xN counts uses. Hover an item for what it has done this battle,
+  or a status (Block, Poison...) for what it means. The battle log lists every activation.
+- After a battle: a breakdown of what every item did, and **Replay** to watch the same fight again.
+- Effect words (Poison, Burn, Stun...) are coloured and italic in tooltips, with definitions underneath.
 
 ## Development
 | Task | Command |

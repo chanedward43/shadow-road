@@ -71,17 +71,51 @@ def art(key, size, long_side=None):
 WEB = sys.platform == "emscripten"
 
 
-def font(size, bold=False):
-    key = (size, bold)
+def font(size, bold=False, italic=False):
+    key = (size, bold, italic)
     if key not in _fonts:
         if WEB:
             # browsers have no system fonts: use pygame's built-in font (scaled to match Segoe UI's size)
             f = pygame.font.Font(None, int(size * 1.3))
             f.set_bold(bold)
+            f.set_italic(italic)
             _fonts[key] = f
         else:
-            _fonts[key] = pygame.font.SysFont("segoeui,arial,helvetica", size, bold=bold)
+            _fonts[key] = pygame.font.SysFont("segoeui,arial,helvetica", size, bold=bold, italic=italic)
     return _fonts[key]
+
+
+def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=2):
+    """Like text_block, but effect keywords (Poison, Burn, Block...) are drawn in their own colour, in italics."""
+    from .keywords import KEYWORDS, keyword_of
+    x0, y = pos
+    x = x0
+    lh = font(size).get_height() + spacing
+    space = font(size).size(" ")[0]
+    for word in s.split(" "):
+        if not word:
+            x += space
+            continue
+        k = keyword_of(word)
+        f = font(size, bold=bool(k), italic=bool(k))
+        w = f.size(word)[0]
+        if x > x0 and x + w > x0 + width:
+            x, y = x0, y + lh
+        surf.blit(f.render(word, True, KEYWORDS[k][1] if k else col), (x, y))
+        x += w + space
+    return y + lh
+
+
+def keyword_glossary(surf, keys, pos, width, size=13, limit=4):
+    """'Poison: deals its stacks...' lines for the given keyword keys. Returns the y after the last line."""
+    from .keywords import KEYWORDS
+    x, y = pos
+    for k in keys[:limit]:
+        name, col, desc = KEYWORDS[k]
+        label = font(size, True, True).render(name + ":", True, col)
+        surf.blit(label, (x, y))
+        y = text_block(surf, desc, (x + label.get_width() + 5, y), width - label.get_width() - 5, size, DIM)
+    return y
 
 
 def text(surf, s, pos, size=18, col=TEXT, bold=False, center=False, right=False):
@@ -284,40 +318,64 @@ def tooltip_lines(iid, eff=None):
     return describe_stats(st)
 
 
-def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None):
+def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=None, fit=False):
+    """Item tooltip. Effect keywords are coloured + italic and explained at the bottom.
+    fight_stats: optional list of lines ("this battle" numbers). fit=True grows/moves the box to fit."""
+    from .keywords import keywords_in
     d = ITEMS[iid]
-    panel(surf, rect, PANEL, RARITY_COL[d["rarity"]])
-    x, y = rect.x + 14, rect.y + 10
+    rect = pygame.Rect(rect)
+    layer = pygame.Surface((rect.width, 900), pygame.SRCALPHA)
+    x, y, wdt = 14, 10, rect.width - 28
     name = eff.get("name", d["name"]) if eff else d["name"]
     lvl = eff.get("level", 1) if eff else 1
-    text(surf, name if lvl <= 1 else f"{d['name']}  (level {lvl})", (x, y), 22, RARITY_COL[d["rarity"]], True)
+    text(layer, name if lvl <= 1 else f"{d['name']}  (level {lvl})", (x, y), 22, RARITY_COL[d["rarity"]], True)
     y += 30
     if d.get("loot"):
-        text(surf, "Enemy drop - never sold in shops", (x, y), 13, GOLD)
+        text(layer, "Enemy drop - never sold in shops", (x, y), 13, GOLD)
         y += 18
     tag = d["rarity"].title() + "  -  " + ", ".join(t for t in d["tags"])
     if d["cls"]:
         tag += "  (class item)"
-    text(surf, tag, (x, y), 14, DIM)
+    text(layer, tag, (x, y), 14, DIM)
     y += 24
-    for ln in tooltip_lines(iid, eff):
-        y = text_block(surf, ln, (x, y), rect.width - 28, 16)
+    lines = tooltip_lines(iid, eff)
+    for ln in lines:
+        y = rich_text_block(layer, ln, (x, y), wdt, 16)
     if eff is not None and eff.get("speed", 1.0) != 1.0:
-        y = text_block(surf, f"(speed boosted x{eff['speed']:.2f} by neighbours)", (x, y),
-                       rect.width - 28, 14, GREEN)
+        y = text_block(layer, f"(speed boosted x{eff['speed']:.2f} by neighbours)", (x, y), wdt, 14, GREEN)
+    if fight_stats:
+        y += 6
+        text(layer, "This battle:", (x, y), 15, GOLD, True)
+        y += 20
+        for ln in fight_stats:
+            y = rich_text_block(layer, ln, (x + 8, y), wdt - 8, 15)
     if price is not None:
         y += 6
-        text(surf, f"Price: {price} ryō", (x, y), 16, GOLD, True)
+        text(layer, f"Price: {price} ryō", (x, y), 16, GOLD, True)
         y += 22
     if not d["enemy"]:
         if price is None:
             y += 6
-        text(surf, f"Sells for: {sell_value(iid, lvl)} ryō", (x, y), 15, (200, 170, 110))
+        text(layer, f"Sells for: {sell_value(iid, lvl)} ryō", (x, y), 15, (200, 170, 110))
         y += 20
     if extra:
         y += 4
-        y = text_block(surf, extra, (x, y), rect.width - 28, 14, DIM)
-    return y
+        y = text_block(layer, extra, (x, y), wdt, 14, DIM)
+    keys = keywords_in(" ".join(lines + (fight_stats or [])))
+    if keys:
+        y += 6
+        pygame.draw.line(layer, LINE, (x, y), (rect.width - 14, y), 1)
+        y = keyword_glossary(layer, keys, (x, y + 6), wdt)
+    h = y + 10
+    if fit:
+        rect.height = h
+        rect.y = max(4, min(rect.y, H - h - 4))
+    else:
+        h = max(h, rect.height)
+        rect.height = h
+    panel(surf, rect, PANEL, RARITY_COL[d["rarity"]])
+    surf.blit(layer, rect.topleft, (0, 0, rect.width, h))
+    return rect.y + h
 
 
 def bar(surf, rect, frac, col, back=(50, 40, 50)):

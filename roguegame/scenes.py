@@ -1,4 +1,5 @@
 """All screens of the game."""
+import copy
 import math
 import random
 
@@ -11,7 +12,7 @@ from . import save
 from .run import RunState
 from .combat import make_battle, effective_stats
 from .events import pick_event, options_for, resolve
-from .inventory import ItemInst
+from .inventory import Grid, ItemInst
 from .sim import pack
 
 CUR = "ryō"
@@ -697,7 +698,8 @@ class InventoryScene(Scene):
         if self.held:
             hover_tip = (self.held["inst"].id, None, None, "Right-click / R / wheel to rotate.")
         if hover_tip:
-            ui.draw_tooltip(s, hover_tip[0], rp, eff=hover_tip[1], price=hover_tip[2], extra=hover_tip[3])
+            ui.draw_tooltip(s, hover_tip[0], rp, eff=hover_tip[1], price=hover_tip[2], extra=hover_tip[3],
+                            fit=True)
         else:
             ch = CHARACTERS[run.char_id]
             panel(s, rp)
@@ -809,6 +811,47 @@ def intent_chips(st):
     return chips
 
 
+# =================================================================== battle helpers
+KCELL = 40          # kit cell size in battle
+
+STATUS_KEYS = {"Block": "block", "Poison": "poison", "Burn": "burn", "Regen": "regen", "Thorns": "thorns",
+               "Dodge": "dodge", "Resolve": "resolve", "Ki": "ki", "Counter": "counter", "Curse": "curse",
+               "Shikigami": "shikigami"}
+
+
+def fight_stat_lines(st):
+    """Readable 'this battle' numbers for one item."""
+    out = []
+    if st.get("uses"):
+        out.append(f"Activated {st['uses']} time{'s' if st['uses'] != 1 else ''}")
+    if st.get("dmg"):
+        crit = f" ({st['crits']} crit{'s' if st.get('crits', 0) != 1 else ''})" if st.get("crits") else ""
+        out.append(f"Dealt {st['dmg']} damage{crit}")
+    for key, label in (("block", "Gained {} Block"), ("heal", "Heal: restored {} HP"), ("poison", "Applied {} Poison"),
+                       ("burn", "Applied {} Burn"), ("curse", "Applied {} Curse"), ("steal", "Steal: took {} Block"),
+                       ("ki", "Gained {} Ki"), ("dodge", "Gained {} Dodge"), ("regen", "Gained {} Regen"),
+                       ("summons", "Summoned {} Shikigami")):
+        if st.get(key):
+            out.append(label.format(st[key]))
+    if st.get("stun"):
+        out.append(f"Stun: froze the enemy for {st['stun']:.1f}s")
+    return out
+
+
+def short_delta(delta):
+    parts = []
+    if "dmg" in delta:
+        parts.append(f"{delta['dmg']} dmg" + (" CRIT" if delta.get("crits") else ""))
+    for key, fmt in (("block", "+{} Block"), ("heal", "+{} heal"), ("poison", "+{} Poison"), ("burn", "+{} Burn"),
+                     ("curse", "+{} Curse"), ("steal", "Steal {}"), ("ki", "+{} Ki"), ("dodge", "+{} Dodge"),
+                     ("regen", "+{} Regen"), ("summons", "+Shikigami")):
+        if key in delta:
+            parts.append(fmt.format(delta[key]))
+    if "stun" in delta:
+        parts.append(f"Stun {delta['stun']:.1f}s")
+    return ", ".join(parts) or "missed"
+
+
 class BattleScene(Scene):
     map_ok = True
 
@@ -818,7 +861,13 @@ class BattleScene(Scene):
         self.kind = kind
         self.enemy_id = enemy_id
         self.battle = make_battle(run, enemy_id, scale, seed=run.rng.randrange(1 << 30))
+        self.initial = copy.deepcopy(self.battle)        # replays restart from this exact moment
         self.pf, self.ef = self.battle.f
+        self.build_enemy_layout()
+        self.status_hits = []
+        self.eff_stats = effective_stats(run.bag, run.char_id, run.techniques)
+        self.show_summary = True
+        self.replays = 0
         self.speed = 1
         self.floats = []
         self.banner = ""
@@ -832,11 +881,42 @@ class BattleScene(Scene):
             self.speed_btns.append(b)
         self.skip_btn = Button((300, 640, 110, 50), "Skip", self.skip)
         self.cont_btn = Button((W - 230, 640, 210, 50), "Continue", self.cont, 22)
+        self.replay_btn = Button((W - 450, 640, 200, 50), "Replay", self.replay, 22)
+        self.summary_btn = Button((440, 640, 200, 50), "Hide summary", self.toggle_summary, 18)
         self.buttons = self.speed_btns + [self.skip_btn]
         self.start_delay = 0.8
 
     def set_speed(self, sp):
         self.speed = sp
+
+    def build_enemy_layout(self):
+        """Enemies have no grid of their own: lay their items out in a small kit so you can see it."""
+        self.e_grid = Grid(7, 3)
+        self.e_map = {}                  # id(CItem) -> ItemInst
+        for ci in self.ef.items:
+            self.place_enemy_item(ci)
+        for iid, lvl in self.ef.carried:  # passive items they carry (no cooldown)
+            if not ITEMS[iid].get("cd"):
+                self.e_grid.first_fit(ItemInst(iid, level=lvl))
+
+    def place_enemy_item(self, ci):
+        inst = ItemInst(ci.st["id"], level=ci.st.get("level", 1))
+        if self.e_grid.first_fit(inst):
+            self.e_map[id(ci)] = inst
+
+    def replay(self):
+        self.battle = copy.deepcopy(self.initial)
+        self.pf, self.ef = self.battle.f
+        self.build_enemy_layout()
+        self.floats, self.banner, self.banner_t = [], "", 0
+        self.finished = False
+        self.start_delay = 0.5
+        self.replays += 1
+        self.buttons = self.speed_btns + [self.skip_btn]
+
+    def toggle_summary(self):
+        self.show_summary = not self.show_summary
+        self.summary_btn.label = "Hide summary" if self.show_summary else "Show summary"
 
     def skip(self):
         self.battle.run_to_end()
@@ -897,6 +977,9 @@ class BattleScene(Scene):
             self.battle.advance(dt * self.speed)
         for e in self.battle.events:
             k, side, a = e["kind"], e["side"], e["amount"]
+            if not a and not e["text"] and k in ("hit", "poison", "burn", "thorns", "fatigue", "counter", "hex",
+                                                 "kiburst", "summon"):
+                continue                                # fully absorbed by Block: no "-0" popups
             if k == "hit":
                 self.float_text(side, f"{'CRIT ' if e['crit'] else ''}-{a}", ui.RED, 30 if e["crit"] else 22)
             elif k == "poison":
@@ -941,7 +1024,9 @@ class BattleScene(Scene):
         if self.battle.done and not self.finished:
             self.finished = True
             self.result_text = "VICTORY" if self.battle.winner == 0 else "DEFEAT"
-            self.buttons = [self.cont_btn]
+            self.show_summary = True
+            self.summary_btn.label = "Hide summary"
+            self.buttons = [self.summary_btn, self.replay_btn, self.cont_btn]
 
     def draw_fighter(self, s, side, f, mouse):
         r = self.panels[side]
@@ -963,37 +1048,23 @@ class BattleScene(Scene):
                                 ("Curse", f.curse, (170, 120, 220)), ("Shikigami", len(f.summons), (120, 210, 230))):
             if val:
                 rr = text(s, f"{label} {val}", (sx, r.y + 102), 16, col, True)
+                self.status_hits.append((rr, STATUS_KEYS[label]))
                 sx = rr.right + 14
         info = f"Crit {int(f.crit * 100)}%"
         if f.evade:
             info += f"   Evade {int(min(0.6, f.evade) * 100)}%"
-        text(s, info, (x, r.y + 130), 15, ui.DIM)
+        rr = text(s, info, (x, r.y + 130), 15, ui.DIM)
+        self.status_hits.append((rr, "evasion" if f.evade else "crit"))
         if f.stun_t > 0:
-            text(s, "STUNNED", (x + 300, r.y + 130), 16, ui.GOLD, True)
+            rr = text(s, "STUNNED", (x + 300, r.y + 130), 16, ui.GOLD, True)
+            self.status_hits.append((rr, "stun"))
         if side == 1:
             desc = ENEMIES[self.enemy_id].get("desc")
             if desc:
                 text_block(s, desc, (r.x + 20, r.y + 172), r.width - 40, 14, (210, 150, 150))
-        text(s, "Items", (r.x + 20, r.y + 220), 18, ui.DIM, True)
-        tip = None
-        for i, ci in enumerate(f.items):
-            bx = r.x + 20 + (i % 4) * 146
-            by = r.y + 248 + (i // 4) * 62
-            box = pygame.Rect(bx, by, 138, 54)
-            col = ui.item_color(ci.st["id"])
-            if ci.flash > 0:
-                col = tuple(min(255, c + 90) for c in col)
-            panel(s, box, col, ui.RARITY_COL[ci.st["rarity"]], radius=6)
-            pic = ui.art(ci.st["id"], 30)
-            tx = bx + 8
-            if pic:
-                s.blit(pic, pic.get_rect(center=(bx + 20, by + 20)))
-                tx = bx + 38
-            text(s, ci.name, (tx, by + 5), 13, ui.TEXT, True)
-            ui.bar(s, (bx + 8, by + 38, 122, 8), ci.timer / ci.cd, ui.GOLD, (30, 26, 34))
-            text(s, f"{ci.cd:.1f}s", (bx + 130, by + 30), 11, ui.DIM, right=True)
-            if box.collidepoint(mouse):
-                tip = ci.st
+        tip = self.draw_kit(s, side, f, (r.x + 20, r.y + 228), mouse)
+        if side == 0:
+            self.draw_log(s, pygame.Rect(r.x + 318, r.y + 220, r.width - 338, 325))
         # phase markers on the HP bar
         for ph in f.phases:
             if not ph["done"]:
@@ -1003,6 +1074,114 @@ class BattleScene(Scene):
         if side == 1:
             self.draw_intents(s, f, pygame.Rect(r.x + 20, r.y + 390, r.width - 40, 155))
         return tip
+
+    def draw_kit(self, s, side, f, origin, mouse):
+        """The fighter's real kit: item art, a cooldown sweep, a flash on activation, and use counts."""
+        ox, oy = origin
+        if side == 0:
+            grid = self.run.bag
+            by_inst = {ci.uid: ci for ci in f.items}
+            find = lambda inst: by_inst.get(inst.uid)
+            label = "YOUR KIT"
+        else:
+            for ci in f.items:                      # weapons drawn mid-fight join the kit
+                if id(ci) not in self.e_map:
+                    self.place_enemy_item(ci)
+            grid = self.e_grid
+            rev = {inst.uid: ci for ci in f.items for k, inst in self.e_map.items() if k == id(ci)}
+            find = lambda inst: rev.get(inst.uid)
+            label = "THEIR KIT"
+        text(s, label, (ox, oy - 22), 15, ui.DIM, True)
+        for y in range(grid.h):
+            for x in range(grid.w):
+                pygame.draw.rect(s, (40, 36, 30) if side == 0 else (44, 30, 34),
+                                 (ox + x * KCELL, oy + y * KCELL, KCELL, KCELL))
+                pygame.draw.rect(s, (66, 58, 48) if side == 0 else (74, 48, 54),
+                                 (ox + x * KCELL, oy + y * KCELL, KCELL, KCELL), 1)
+        tip = None
+        for inst in grid.items:
+            ci = find(inst)
+            px, py = ox + inst.x * KCELL, oy + inst.y * KCELL
+            ui.draw_item(s, inst.id, inst.shape, px, py, KCELL, level=inst.level, rot=inst.rot)
+            xs = [c[0] for c in inst.shape]
+            ys = [c[1] for c in inst.shape]
+            box = pygame.Rect(px + min(xs) * KCELL + 3, py + min(ys) * KCELL + 3,
+                              (max(xs) - min(xs) + 1) * KCELL - 6, (max(ys) - min(ys) + 1) * KCELL - 6)
+            if ci is not None:
+                left = 1 - min(1.0, ci.timer / ci.cd)               # cooldown still to go
+                sh = pygame.Surface(box.size, pygame.SRCALPHA)
+                sh.fill((0, 0, 0, 120 if f.stun_t <= 0 else 170))
+                s.blit(sh, box.topleft, (0, 0, box.width, int(box.height * left)))
+                if ci.flash > 0:
+                    fl = pygame.Surface(box.size, pygame.SRCALPHA)
+                    fl.fill((255, 255, 220, int(160 * ci.flash / 0.25)))
+                    s.blit(fl, box.topleft)
+                uses = ci.stats.get("uses", 0)
+                if uses:
+                    text(s, f"x{uses}", (box.right - 2, box.bottom - 15), 12, ui.GOLD, True, right=True)
+            if box.collidepoint(mouse):
+                if ci is not None:
+                    tip = (inst.id, ci.st, ci.stats)
+                else:
+                    tip = (inst.id, inst.data if side == 1 else self.eff_stats.get(inst.uid, inst.data), None)
+        return tip
+
+    def draw_log(self, s, area):
+        """Activation-by-activation log for both sides (newest at the bottom)."""
+        panel(s, area, (26, 24, 34), ui.LINE, radius=6)
+        text(s, "BATTLE LOG", (area.x + 10, area.y + 6), 14, ui.DIM, True)
+        lh = 17
+        rows = (area.height - 30) // lh
+        y = area.y + 28
+        for e in self.battle.log[-rows:]:
+            who = (150, 200, 255) if e["side"] == 0 else (240, 140, 140)
+            text(s, f"{e['t']:5.1f}", (area.x + 8, y), 12, ui.DIM)
+            name = e["name"] if len(e["name"]) <= 16 else e["name"][:15] + "."
+            nr = text(s, name, (area.x + 46, y), 13, who, True)
+            ui.rich_text_block(s, short_delta(e["delta"]), (nr.right + 6, y), area.right - nr.right - 12, 13,
+                               ui.TEXT)
+            y += lh
+
+    def draw_keyword_tip(self, s, key, mouse):
+        from .keywords import KEYWORDS
+        name, col, desc = KEYWORDS[key]
+        lines = ui.wrap(desc, 14, 280)
+        h = 34 + 18 * len(lines)
+        r = pygame.Rect(min(mouse[0] + 14, W - 310), min(mouse[1] + 14, H - h - 4), 300, h)
+        panel(s, r, ui.PANEL, col)
+        s.blit(ui.font(17, True, True).render(name, True, col), (r.x + 12, r.y + 7))
+        ui.text_block(s, desc, (r.x + 12, r.y + 30), 276, 14, ui.TEXT)
+
+    def draw_summary(self, s):
+        """End-of-fight breakdown: what every item did."""
+        r = pygame.Rect(W // 2 - 440, 120, 880, 470)
+        ov = pygame.Surface((W, H), pygame.SRCALPHA)
+        ov.fill((0, 0, 0, 120))
+        s.blit(ov, (0, 0))
+        panel(s, r, (24, 22, 32), ui.GOLD if self.battle.winner == 0 else ui.RED, width=3)
+        text(s, self.result_text, (r.centerx, r.y + 36), 52, ui.GOLD if self.battle.winner == 0 else ui.RED, True,
+             center=True)
+        text(s, f"{self.battle.t:.1f}s   -   {len(self.battle.log)} activations", (r.centerx, r.y + 76), 15,
+             ui.DIM, center=True)
+        for side, (f, title) in enumerate(((self.pf, "Your items"), (self.ef, self.ef.name))):
+            cx = r.x + 24 + side * 430
+            text(s, title, (cx, r.y + 100), 18, (150, 200, 255) if side == 0 else (240, 140, 140), True)
+            items = sorted(f.items, key=lambda ci: (-ci.stats.get("dmg", 0), -sum(ci.stats.values())))
+            y = r.y + 128
+            for ci in items[:10]:
+                pic = ui.art(ci.st["id"], 22)
+                if pic:
+                    s.blit(pic, pic.get_rect(center=(cx + 11, y + 10)))
+                text(s, ci.name[:20], (cx + 28, y + 1), 14, ui.TEXT, True)
+                text(s, f"x{ci.stats.get('uses', 0)}", (cx + 200, y + 1), 13, ui.GOLD, True)
+                ui.rich_text_block(s, short_delta({k: v for k, v in ci.stats.items() if k != "uses"}),
+                                   (cx + 238, y + 1), 170, 13, ui.TEXT)
+                y += 26
+            tot = {k: v for k, v in self.battle.totals[side].items() if k != "fatigue"}
+            if tot:
+                ui.rich_text_block(s, "Over time: " + ", ".join(f"{v} {k.title()}" for k, v in tot.items()) +
+                                   " damage", (cx, r.bottom - 34), 400, 13, ui.DIM)
+
 
     def draw_intents(self, s, f, area):
         """Slay-the-Spire style intents: what the enemy will do next, and when."""
@@ -1047,6 +1226,9 @@ class BattleScene(Scene):
         head = {"fight": "Battle", "elite": "ELITE Battle", "boss": "BOSS BATTLE"}[self.kind]
         text(s, f"{head}  -  Stage {self.run.stage}  -  {self.battle.t:.1f}s", (W // 2, 28), 22,
              ui.GOLD, True, center=True)
+        self.status_hits = []
+        if self.replays:
+            text(s, f"REPLAY {self.replays}", (20, 18), 18, (200, 160, 255), True)
         tip_a = self.draw_fighter(s, 0, self.pf, mouse)
         tip_b = self.draw_fighter(s, 1, self.ef, mouse)
         tip = tip_a or tip_b
@@ -1063,16 +1245,21 @@ class BattleScene(Scene):
             s.blit(ov, (0, 470))
             text(s, self.banner, (W // 2, 505), 30, ui.GOLD, True, center=True)
         if tip:
-            r = pygame.Rect(min(mouse[0] + 16, W - 330), min(mouse[1] + 16, H - 230), 310, 210)
-            ui.draw_tooltip(s, tip["id"], r, eff=tip)
+            iid, eff, stats = tip
+            r = pygame.Rect(min(mouse[0] + 16, W - 350), mouse[1] + 16, 330, 100)
+            ui.draw_tooltip(s, iid, r, eff=eff, fight_stats=fight_stat_lines(stats) if stats else None, fit=True)
+        else:
+            for rr, key in self.status_hits:
+                if rr.collidepoint(mouse):
+                    self.draw_keyword_tip(s, key, mouse)
+                    break
+        if self.finished and self.show_summary:
+            self.draw_summary(s)
         for b in self.speed_btns:
             b.col = (80, 70, 40) if self.speed == int(b.label[0]) else ui.PANEL2
-        if self.finished:
-            ov = pygame.Surface((W, 140), pygame.SRCALPHA)
-            ov.fill((0, 0, 0, 170))
-            s.blit(ov, (0, 290))
-            text(s, self.result_text, (W // 2, 360), 72,
-                 ui.GOLD if self.battle.winner == 0 else ui.RED, True, center=True)
+        if self.finished and not self.show_summary:
+            text(s, self.result_text, (W // 2, 28), 30, ui.GOLD if self.battle.winner == 0 else ui.RED, True,
+                 center=True)
         self.draw_buttons(s)
 
 

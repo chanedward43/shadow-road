@@ -314,6 +314,41 @@ class TestBagControls(unittest.TestCase):
         self.assertEqual([i.level for i in sc.run.all_items() if i.id == "katana"], [2])
 
 
+class TestBattleReplayAndStats(unittest.TestCase):
+    def test_item_stats_and_log(self):
+        r = RunState("onmyoji", 3)
+        for i in ("fox_shikigami", "hex_scroll"):
+            r.bag.first_fit(ItemInst(i))
+        b = make_battle(r, "kappa", 1.0, seed=2)
+        b.run_to_end()
+        player_items = b.f[0].items
+        self.assertEqual(sum(ci.stats.get("uses", 0) for ci in player_items),
+                         sum(1 for e in b.log if e["side"] == 0), "every activation is logged")
+        fox = next(ci for ci in player_items if ci.st["id"] == "fox_shikigami")
+        self.assertGreater(fox.stats.get("dmg", 0), 0, "summon damage is credited to the item that summoned it")
+        hexs = next(ci for ci in player_items if ci.st["id"] == "hex_scroll")
+        self.assertGreater(hexs.stats.get("dmg", 0), 0)
+
+    def test_replay_is_identical(self):
+        import copy as _copy
+        r = RunState("samurai", 4)
+        b = make_battle(r, "kurogane", 1.0, seed=9)
+        start = _copy.deepcopy(b)
+        b.run_to_end()
+        again = _copy.deepcopy(start)
+        again.run_to_end()
+        self.assertEqual((b.winner, round(b.t, 2), b.f[0].hp, b.f[1].hp, len(b.log)),
+                         (again.winner, round(again.t, 2), again.f[0].hp, again.f[1].hp, len(again.log)))
+
+    def test_keywords(self):
+        from roguegame.keywords import KEYWORDS, keywords_in, keyword_of
+        self.assertEqual(keyword_of("Poison,"), "poison")
+        self.assertEqual(keywords_in("Inflict 2 Poison and Stun the enemy for 0.5s"), ["poison", "stun"])
+        for iid, d in data.ITEMS.items():           # every keyword used in a tooltip has a definition
+            for k in keywords_in(" ".join(data.describe_stats(d))):
+                self.assertIn(k, KEYWORDS)
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame

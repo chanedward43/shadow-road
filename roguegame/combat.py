@@ -110,6 +110,7 @@ class CItem:
         self.flash = 0.0
         self.triggers = 0
         self.bonus = 0               # Grow: damage this item has gained during the battle
+        self.stats = {}              # what this item did this battle: dmg, block, heal, poison, ...
 
 
 class Fighter:
@@ -273,8 +274,17 @@ class Battle:
         self.winner = None    # 0 = player / a, 1 = b
         self.fatigue = 0
         self.fatigue_t = 0.0
+        self.log = []                # one entry per item activation: dict(t, side, name, id, delta)
+        self.totals = [{}, {}]       # damage each side dealt through statuses (poison, burn, thorns...)
+        self._cur = None             # the item currently activating (credited with its effects)
+        self._cur_side = None
 
     # ---- helpers
+    def _credit(self, key, amount, item=None):
+        it = item or self._cur
+        if it is not None and amount:
+            it.stats[key] = it.stats.get(key, 0) + amount
+
     def _emit(self, kind, side, amount=0, crit=False, text=""):
         self.events.append(dict(kind=kind, side=side, amount=amount, crit=crit, text=text, t=self.t))
 
@@ -282,6 +292,11 @@ class Battle:
         tgt = self.f[side]
         if amount <= 0:
             return 0
+        if self._cur is not None and side != self._cur_side and kind in ("hit", "hex", "kiburst"):
+            self._credit("dmg", amount)
+        elif kind in ("poison", "burn", "thorns", "counter", "fatigue"):
+            t = self.totals[1 - side]                  # credited to the other side
+            t[kind] = t.get(kind, 0) + amount
         if not pierce and tgt.block > 0:
             absorbed = min(tgt.block, amount - min(pierce_amt, amount))
             tgt.block -= absorbed
@@ -294,6 +309,8 @@ class Battle:
         f = self.f[side]
         amount = min(amount, f.max_hp - f.hp)
         if amount > 0:
+            if self._cur is not None and side == self._cur_side:
+                self._credit("heal", amount)
             f.hp += amount
             self._emit("heal", side, amount)
 
@@ -313,8 +330,10 @@ class Battle:
         crit = self.rng.random() < me.crit + st.get("crit", 0)
         if crit:
             dmg = int(dmg * CRIT_MULT)
+            self._credit("crits", 1)
             if (me.poison_on_crit or me.crit_poison) and not foe.poison_immune:
                 foe.poison += me.poison_on_crit + me.crit_poison
+                self._credit("poison", me.poison_on_crit + me.crit_poison)
             if me.crit_block:
                 me.block += me.crit_block
         if me.ambush:
@@ -368,12 +387,24 @@ class Battle:
                 continue
             dmg = self._cursed(me, self.rng.randint(*sm["dmg"]))
             self._damage(1 - side, dmg, "summon")
+            self._credit("dmg", dmg, item=sm.get("src"))
             if sm["burn"]:
                 foe.burn += sm["burn"]
             if sm["curse"]:
                 foe.curse += sm["curse"]
 
     def _activate(self, side, ci):
+        before = dict(ci.stats)
+        self._cur, self._cur_side = ci, side
+        try:
+            self._activate_inner(side, ci)
+        finally:
+            self._cur = self._cur_side = None
+        ci.stats["uses"] = ci.stats.get("uses", 0) + 1
+        delta = {k: v - before.get(k, 0) for k, v in ci.stats.items() if v != before.get(k, 0) and k != "uses"}
+        self.log.append(dict(t=round(self.t, 2), side=side, name=ci.name, id=ci.st["id"], delta=delta))
+
+    def _activate_inner(self, side, ci):
         me, foe = self.f[side], self.f[1 - side]
         st = ci.st
         ci.flash = 0.25
@@ -397,6 +428,7 @@ class Battle:
             taken = min(foe.block, st["steal_block"])
             foe.block -= taken
             me.block += taken
+            self._credit("steal", taken)
             self._emit("steal", side, taken, text=f"STOLE {taken} BLOCK")
         if st.get("cleanse") and (me.poison or me.burn):
             me.poison = max(0, me.poison - st["cleanse"])
@@ -404,10 +436,14 @@ class Battle:
             self._emit("cleanse", side, st["cleanse"], text="CLEANSED")
         if st.get("block"):
             me.block += st["block"]
+            self._credit("block", st["block"])
             self._emit("block", side, st["block"])
         if st.get("summon"):
+            self._credit("summons", 1)
             if len(me.summons) < SUMMON_CAP:
-                me.summons.append(new_summon(st["summon"]))
+                sm = new_summon(st["summon"])
+                sm["src"] = ci
+                me.summons.append(sm)
                 self._emit("summon", side, text="+ " + st["summon"]["name"])
             else:   # army is full: empower it instead
                 for sm in me.summons:
@@ -415,9 +451,11 @@ class Battle:
                 self._emit("summon", side, text="Shikigami empowered")
         if st.get("curse"):
             foe.curse += st["curse"]
+            self._credit("curse", st["curse"])
         if st.get("hex") and foe.curse:
             self._damage(1 - side, st["hex"] * foe.curse, "hex", pierce=True)
         if st.get("ki") and me.ki_max:
+            self._credit("ki", min(st["ki"], me.ki_max - me.ki))
             me.ki = min(me.ki_max, me.ki + st["ki"])
         if st.get("ki_burst") and me.ki:
             k = me.ki
@@ -431,13 +469,18 @@ class Battle:
             self._heal(side, st["heal"])
         if st.get("regen"):
             me.regen += st["regen"]
+            self._credit("regen", st["regen"])
         if st.get("dodge"):
             me.dodge += st["dodge"]
+            self._credit("dodge", st["dodge"])
         if st.get("poison") and not foe.poison_immune:
             foe.poison += st["poison"]
+            self._credit("poison", st["poison"])
         if st.get("burn"):
             foe.burn += st["burn"]
+            self._credit("burn", st["burn"])
         if st.get("stun") and foe.stun_t <= 0 and foe.stun_immune <= 0:
+            self._credit("stun", st["stun"])
             foe.stun_t = st["stun"]
             foe.stun_immune = st["stun"] + STUN_IMMUNITY
             self._emit("stun", 1 - side, text=f"STUNNED {st['stun']:.1f}s")

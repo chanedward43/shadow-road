@@ -65,16 +65,45 @@ class TestContent(unittest.TestCase):
                         self.assertIn(iid, data.ITEMS)
 
     def test_enemies_fight_with_real_items(self):
+        import random as _r
+        from roguegame.combat import enemy_fighter
         for eid, e in data.ENEMIES.items():
-            with self.subTest(enemy=eid):
-                kit = e.get("kit", [])
-                self.assertTrue(kit, "every enemy uses items the player can also own")
-                for iid, lvl in kit:
+            tier = data.enemy_tier(eid)
+            with self.subTest(enemy=eid, tier=tier):
+                f = enemy_fighter(eid, 1.0, stage=3, rng=_r.Random(eid))
+                self.assertTrue(f.carried, "every enemy carries items the player can also own")
+                for iid, lvl in f.carried:
                     self.assertFalse(data.ITEMS[iid]["enemy"], f"{iid} must be a player item")
                     self.assertIn(lvl, range(1, data.MAX_LEVEL + 1))
-                wields = {i for i, _ in kit} | {i for ph in e.get("phases", []) for i in ph.get("add", [])}
-                self.assertIn(data.ENEMY_LOOT[eid], wields, "enemies wield the item they drop")
+                wields = {i for i, _ in e["kit"]} | {i for ph in e.get("phases", []) for i in ph.get("add", [])}
+                self.assertIn(data.ENEMY_LOOT[eid], wields, "enemies wield their signature item")
                 self.assertLessEqual(len(e["items"]), 2, "at most two enemy-only signature moves")
+
+    def test_enemy_tiers_fill_rules(self):
+        import random as _r
+        for seed in range(15):
+            mob = data.enemy_fill("kappa", 2, _r.Random(seed))
+            self.assertEqual(len(mob), 2)
+            self.assertTrue(all(data.ITEMS[i]["cls"] is None for i, _ in mob), "mobs: shared items only")
+            elite = data.enemy_fill("nue", 3, _r.Random(seed))
+            self.assertIsNotNone(data.ITEMS[elite[0][0]]["cls"], "elites carry a class item")
+            self.assertEqual(elite[0][1], 2, "elite class item is level 2 in stage 3")
+            boss = data.enemy_fill("orochi", 3, _r.Random(seed))
+            classes = [data.ITEMS[i]["cls"] for i, _ in boss[:2]]
+            self.assertTrue(all(classes) and classes[0] != classes[1], "bosses: items from two different classes")
+        a = data.enemy_fill("ashura", 3, _r.Random("7:ashura"))
+        self.assertEqual(a, data.enemy_fill("ashura", 3, _r.Random("7:ashura")), "same seed, same gear")
+
+    def test_random_drops(self):
+        import random as _r
+        r = RunState("ninja", 1)
+        carried = [("kappa_cucumber", 1), ("tanto", 1), ("bento_box", 1)]
+        drops = [r.roll_drop("kappa", carried, _r.Random(s)) for s in range(400)]
+        sig = sum(1 for d in drops if d[2]) / len(drops)
+        self.assertAlmostEqual(sig, data.SIGNATURE_DROP_CHANCE["mob"], delta=0.07)
+        self.assertTrue(all(d[0] in {"kappa_cucumber", "tanto", "bento_box"} for d in drops))
+        boss = r.roll_drop("ashura", [("kusarigama", 2)], _r.Random(3))
+        self.assertIn(boss, [("six_arm_blade", 1, True), ("kusarigama", 2, False)], "keeps the carried level")
 
     def test_classes(self):
         for cid, ch in data.CHARACTERS.items():

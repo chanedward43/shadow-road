@@ -6,7 +6,8 @@ appear in each stage, which villain rules each stage, and which ? events show up
 import random
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
-                   TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL)
+                   TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL,
+                   SIGNATURE_DROP_CHANCE, enemy_tier)
 from .inventory import Grid, ItemInst
 
 MAP_ROWS = 6
@@ -170,8 +171,21 @@ class RunState:
         return out
 
     def loot_of(self, enemy_id):
-        """The item this enemy drops (enemy-exclusive)."""
+        """The enemy's signature (enemy-exclusive) item."""
         return ENEMY_LOOT.get(enemy_id)
+
+    def roll_drop(self, enemy_id, carried, rng=None):
+        """What a beaten enemy drops: its signature item (chance by tier) or one of the other items
+        it was carrying, at the level it had. Returns (item_id, level, is_signature) or None."""
+        rng = rng or self.rng
+        signature = ENEMY_LOOT.get(enemy_id)
+        others = [(i, lvl) for i, lvl in carried if i != signature]
+        if signature and (not others or rng.random() < SIGNATURE_DROP_CHANCE[enemy_tier(enemy_id)]):
+            return signature, 1, True
+        if others:
+            iid, lvl = rng.choice(others)
+            return iid, lvl, False
+        return None
 
     def gold_reward(self, kind):
         lo, hi = GOLD_REWARD.get(kind, GOLD_REWARD["fight"])

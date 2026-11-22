@@ -6,7 +6,7 @@ for asynchronous PvP (fight another player's saved build "ghost").
 import copy
 import random
 
-from .data import ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats
+from .data import ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats, enemy_fill
 
 TICK = 0.05
 FATIGUE_START = 25.0   # after this many seconds both sides take growing damage
@@ -154,6 +154,7 @@ class Fighter:
         self.status_t = 0.0
         self.phases = []
         self.phase_msg = ""
+        self.carried = []            # enemies: real items carried (and droppable)
 
     def add_stats(self, st, uid=None):
         self.block += st.get("s_block", 0)
@@ -224,7 +225,8 @@ def _scale_stats(st, scale):
     return st
 
 
-def enemy_fighter(enemy_id, scale=1.0):
+def enemy_fighter(enemy_id, scale=1.0, stage=1, rng=None):
+    """Enemy = signature moves + fixed core items + (with an rng) a random fill of real items."""
     e = ENEMIES[enemy_id]
     hp = int(e["hp"] * scale)
     f = Fighter(e["name"], hp, hp, None, (170, 60, 60), e["name"][0], "enemy")
@@ -235,8 +237,10 @@ def enemy_fighter(enemy_id, scale=1.0):
     f.crit += e.get("crit", 0)
     for iid in e["items"]:                     # unique enemy-only moves
         f.add_stats(_scale_stats(ITEMS[iid], scale))
-    for iid, lvl in e.get("kit", []):          # real items the player can also own
+    gear = list(e.get("kit", [])) + (enemy_fill(enemy_id, stage, rng) if rng is not None else [])
+    for iid, lvl in gear:                      # real items the player can also own
         f.add_stats(_scale_stats(level_stats(ITEMS[iid], lvl), scale))
+    f.carried = gear                           # what it can drop when beaten
     f.phases = [dict(p, done=False, scale=scale) for p in e.get("phases", [])]
     return f
 
@@ -244,7 +248,7 @@ def enemy_fighter(enemy_id, scale=1.0):
 def make_battle(run, enemy_id, scale=1.0, seed=0):
     """Build both sides (incl. effects one side has on the other) and return a Battle."""
     p = player_fighter(run)
-    e = enemy_fighter(enemy_id, scale)
+    e = enemy_fighter(enemy_id, scale, run.stage, random.Random(f"{seed}:{enemy_id}"))
     slow = tech_mods(run.techniques).get("enemy_slow", 0)
     if slow:
         for ci in e.items:
@@ -447,6 +451,8 @@ class Battle:
                 sc = ph["scale"]
                 for iid in ph.get("add", []):
                     f.items.append(CItem(_scale_stats(ITEMS[iid], sc)))
+                    if not ITEMS[iid]["enemy"]:
+                        f.carried.append((iid, 1))   # a drawn weapon can be dropped too
                 if ph.get("speed"):
                     for ci in f.items:
                         ci.cd = round(ci.cd / ph["speed"], 2)

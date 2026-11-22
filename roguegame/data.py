@@ -836,3 +836,70 @@ ENEMIES["nio_guardian"]["kit"] = [("nio_fist", 1), ("fudo_statue", 1)]
 ENEMIES["gashadokuro"]["kit"] = [("giant_rib", 1), ("kanabo", 1), ("toad_venom", 1)]
 ENEMIES["yuki_onna"]["kit"] = [("yuki_breath", 1), ("kaiken", 1)]
 ENEMIES["gama"]["kit"] = [("toad_venom", 1), ("toad_scroll", 1)]   # wields its drop (passive Regen)
+
+
+# ================================================================ v5: TIERED ENEMY KITS + RANDOM FILL
+# Every enemy = a fixed CORE (its unique drop + its signature moves) + a random FILL rolled per battle
+# from the run's seed, so the same enemy carries different gear in different runs.
+#   mob   : core + 1 shared item (2 from stage 2), common/rare
+#   elite : core + 1 class item from ANY class + 1 shared item, rare/epic (class item is level 2 in stage 3)
+#   boss  : signature moves + 2 class items from two DIFFERENT classes + 1 shared item, rare/epic
+#           (legendaries possible in stage 3, first class item level 2 from stage 2); bosses draw their
+#           unique weapon when they transform.
+BOSS_IDS = {b for _s in STAGES.values() for b in _s["bosses"]}
+ELITE_IDS = {e for _s in STAGES.values() for e in _s["elites"]} | {"sumo"}
+
+
+def enemy_tier(eid):
+    return "boss" if eid in BOSS_IDS else ("elite" if eid in ELITE_IDS else "mob")
+
+
+# what each tier's unique drop is worth chasing: chance the drop is the enemy's signature item
+SIGNATURE_DROP_CHANCE = {"mob": 0.3, "elite": 0.5, "boss": 0.7}
+
+
+def _enemy_usable(d):
+    """Items an enemy can actually use (no grid: pure auras do nothing; no Ki: Ki items do nothing)."""
+    if d["enemy"] or d.get("loot") or d.get("ki") or d.get("ki_burst"):
+        return False
+    if d.get("cd"):
+        return True
+    return any(d.get(k) for k in ("s_block", "s_hp", "s_regen", "s_thorns", "s_crit", "s_evade", "s_counter",
+                                  "s_curse", "s_crit_block", "s_crit_poison"))
+
+
+def _pool(cls_rule, rarities):
+    return sorted(i for i, d in ITEMS.items() if _enemy_usable(d) and d["rarity"] in rarities and cls_rule(d["cls"]))
+
+
+def enemy_fill(eid, stage, rng):
+    """Random extra gear for one battle: [(item_id, level)]. Deterministic for a given rng."""
+    tier = enemy_tier(eid)
+    core = {i for i, _ in ENEMIES[eid].get("kit", [])}
+    shared = lambda rar: [i for i in _pool(lambda c: c is None, rar) if i not in core]
+    if tier == "mob":
+        n = 1 if stage == 1 else 2
+        return [(i, 1) for i in rng.sample(shared(("common", "rare")), n)]
+    if tier == "elite":
+        cls_item = rng.choice(_pool(lambda c: c is not None, ("rare", "epic")))
+        return [(cls_item, 2 if stage >= 3 else 1), (rng.choice(shared(("rare", "epic"))), 1)]
+    rar = ("rare", "epic", "legendary") if stage >= 3 else ("rare", "epic")
+    classes = rng.sample(sorted(CHARACTERS), 2)
+    picks = [rng.choice(_pool(lambda c, k=k: c == k, rar)) for k in classes]
+    out = [(picks[0], 2 if stage >= 2 else 1), (picks[1], 1)]
+    out.append((rng.choice(shared(("rare", "epic"))), 1))
+    return out
+
+
+# Cores: mobs and elites carry their own drop; bosses fight with signature moves + fill and
+# draw their unique weapon on transformation (set in the phases above).
+for _eid, _e in ENEMIES.items():
+    _drop = ENEMY_LOOT.get(_eid)
+    if enemy_tier(_eid) == "boss":
+        _e["kit"] = []
+    else:
+        _e["kit"] = [(_drop, 1)] if _drop else []
+ENEMIES["gama"]["kit"] = [("toad_scroll", 1)]          # passive Regen relic he carries all fight
+ENEMIES["yuki_onna"]["kit"] = [("yuki_breath", 1)]
+ENEMIES["orochi"]["kit"] = [("orochi_fangs", 1)]
+ENEMIES["gama"]["phases"][0]["add"] = ["e_toad_smoke"]

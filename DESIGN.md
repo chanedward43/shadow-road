@@ -168,6 +168,30 @@ The AI agent understands all of these. It also gets a "synergy" signal: how many
   | Ashura | Shatter Command |
 - **Strength check:** a before-and-after comparison with a fixed test kit keeps each enemy's strength close to before. Stage-3 mobs are deliberately tougher.
 
+### Tiered gear (random per run)
+Each enemy has a **fixed core** that makes it recognisable, plus a **random fill** rolled from the run's seed. The same enemy carries different gear in different runs:
+
+| Tier | Fixed core | Random fill |
+|---|---|---|
+| Mob | Its signature item | 1 shared item (2 from stage 2), common or rare |
+| Elite | Its signature item, plus up to 2 signature moves | 1 class item from **any** class (level 2 in stage 3), plus 1 shared item, rare or epic |
+| Boss | 1–2 signature moves, plus its unique weapon drawn when it transforms | Class items from **two different classes** (one is level 2 from stage 2; legendaries possible in stage 3), plus 1 shared item |
+
+Enemies only roll items they can actually use: no pure auras (they have no grid) and no Ki items.
+
+### Random drops
+When you win, the drop is rolled from **what the enemy was carrying**:
+
+| Tier | Chance of its signature item | Otherwise |
+|---|---|---|
+| Mob | 30% | One of its other carried items |
+| Elite | 50% | One of its other carried items |
+| Boss | 70% | One of its other carried items |
+
+- Elite and boss drops keep the level the enemy had them at.
+- **Regular fights:** the drop is one of your three reward choices.
+- **Elites and bosses:** the drop is free, and then you pick a reward as well.
+
 **New mechanics:**
 - **Grow:** a weapon gains damage every time it hits, for the rest of the fight.
 - **Steal Block:** takes the enemy's Block for yourself.

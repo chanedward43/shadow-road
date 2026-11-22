@@ -103,10 +103,11 @@ def play(char_id, seed, policy, log=None):
         run.battles_won += 1
         run.kills.append(eid)
         run.gold_reward(kind)
-        drop = run.loot_of(eid)
+        rolled = run.roll_drop(eid, b.f[1].carried)
+        drop = rolled[0] if rolled else None
         if kind in ("elite", "boss"):
-            if drop:
-                run.add_item(drop)
+            if rolled:
+                run.add_item(rolled[0], level=rolled[1])
             techs = run.technique_choices()
             if techs:
                 run.learn(techs[decide("tech", techs)])

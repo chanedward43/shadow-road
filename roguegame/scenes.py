@@ -851,7 +851,8 @@ class BattleScene(Scene):
         run.battles_won += 1
         run.kills.append(self.enemy_id)
         gold = run.gold_reward(self.kind)
-        drop = run.loot_of(self.enemy_id)
+        rolled = run.roll_drop(self.enemy_id, self.ef.carried)
+        drop, dlvl, signature = rolled if rolled else (None, 1, False)
         if self.kind == "boss" and run.stage >= 3:
             g.change(EndScene(g, True))
             return
@@ -864,13 +865,17 @@ class BattleScene(Scene):
 
         def reward():
             # regular enemies: their drop is one of the choices. Elites & bosses: drop is free, then pick one.
-            msg = f"Victory! +{gold} {CUR}. Take one - the first is what the enemy dropped."
+            msg = f"Victory! +{gold} {CUR}. Take one - the first is what the enemy dropped" + (
+                " (its signature item!)." if signature else ".")
             offers = run.reward_choices(self.kind)
             if drop and self.kind == "fight":
                 offers = [drop] + offers[:2]
             elif drop:
-                got = run.add_item(drop)
-                msg = (f"+{gold} {CUR}. It dropped {ITEMS[drop]['name']}"
+                got = run.add_item(drop, level=dlvl)
+                what = ITEMS[drop]["name"] + (f" (level {dlvl})" if dlvl > 1 else "")
+                if signature:
+                    what = "its signature " + what
+                msg = (f"+{gold} {CUR}. It dropped {what}"
                        + (" (in your chest)." if got else " but you had no room!") + " Now take one more.")
             return InventoryScene(g, "reward", offers=offers, on_done=after_reward, title="Spoils", message=msg,
                                   drops=[drop] if drop and self.kind == "fight" else [])

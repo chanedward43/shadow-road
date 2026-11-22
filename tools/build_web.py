@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STAGE = os.path.join(ROOT, "web_build")
 
 GAME_CODE = ["main.py", "roguegame"]
-SKIP_MODULES = {"ai.py", "sim.py"}            # numpy-based AI: desktop/balance tool only
+SKIP_MODULES = {"ai.py"}                      # numpy-based AI: desktop/balance tool only
 
 
 def stage():

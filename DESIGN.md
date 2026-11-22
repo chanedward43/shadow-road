@@ -153,6 +153,37 @@ Every class has two archetypes. Each one is made of a **setup** item, an **engin
 
 The AI agent understands all of these. It also gets a "synergy" signal: how many items in your kit share tags with the item it's looking at.
 
+## Enemies fight with real items
+- **Real kits:** every enemy's moves are now mostly items you can own too, sometimes levelled up. For example, the Oni Brute fights with an Oni Club, a level-2 Dō Armor and an Oni Gauntlet. They show their art in battle, and the Enemy Intent panel reads them like any other move.
+- **They wield their drop:** each enemy uses its own enemy-drop item, so beating it hands you the weapon you just watched it use. Bosses draw theirs when they transform; for example, Kurogane draws the Warlord's Second Blade at half health.
+- **Signature moves:** each enemy keeps at most **two enemy-only moves**. These are strong, unique abilities, but fair:
+
+  | Boss | Signature moves |
+  |---|---|
+  | Gama | Toad Sage's Tongue: steals Block and drains life |
+  | Kurogane | Bandit King's Rally: Block and cleanse |
+  | Kiyohime | Bell of Dōjō-ji: Burn and stun |
+  | Yuki-onna | Snow Shroud |
+  | Orochi | Eight Venoms: Poison and Block steal |
+  | Ashura | Shatter Command |
+- **Strength check:** a before-and-after comparison with a fixed test kit keeps each enemy's strength close to before. Stage-3 mobs are deliberately tougher.
+
+**New mechanics:**
+- **Grow:** a weapon gains damage every time it hits, for the rest of the fight.
+- **Steal Block:** takes the enemy's Block for yourself.
+- **Cleanse:** removes your own Poison and Burn.
+
+**New items:**
+
+| Group | Items |
+|---|---|
+| Shared | Training Bokken, Purifying Salt, Thief's Grapnel, Sacred Miki Sake, Oni Gauntlet, War Taiko |
+| Samurai | Yoroi-dōshi (armor piercer), Muramasa's Grudge (legendary, Grow) |
+| Ninja | Shadow Clone Scroll (summons) |
+| Kunoichi | Smoke Fan, Serpent Hairpin |
+| Onmyōji | Purification Ofuda |
+| Sōhei | Prayer Wheel, Iron Begging Bowl |
+
 ## Keeping it running smoothly
 - **Save and continue:** the game autosaves whenever the map opens. **Continue** on the title screen resumes the run, and finishing a run deletes the save. Saves are kept in `%APPDATA%\ShadowRoad\run.json` and written atomically, so a crash mid-save can't corrupt them.
 - **Automated tests:** `python -m unittest discover tests` runs 17 checks in about 2 seconds. They cover:

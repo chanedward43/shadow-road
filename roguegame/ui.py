@@ -5,7 +5,7 @@ import os
 
 import pygame
 
-from .data import ITEMS, describe_stats
+from .data import ITEMS, describe_stats, sell_value
 
 W, H = 1280, 720
 
@@ -211,7 +211,7 @@ def _glyph(surf, tag, center, size, col):
         pygame.draw.line(surf, col, (x + s * .4, y - s * .4), (x - s * .4, y + s * .4), w)
 
 
-def draw_item(surf, iid, shape, ox, oy, cell, alpha=230, highlight=None, level=1):
+def draw_item(surf, iid, shape, ox, oy, cell, alpha=230, highlight=None, level=1, rot=0):
     """Draw a tattoo shape with its top-left cell at (ox, oy)."""
     d = ITEMS[iid]
     tag = d["tags"][0]
@@ -244,7 +244,10 @@ def draw_item(surf, iid, shape, ox, oy, cell, alpha=230, highlight=None, level=1
     ys = [c[1] for c in cells]
     bw = (max(xs) - min(xs) + 1) * cell
     bh = (max(ys) - min(ys) + 1) * cell
+    # fit the art to the item's UNrotated footprint, then turn it with the item (90 degrees per turn)
     pic = art(iid, int(min(bw, bh) * 0.78), int(max(bw, bh) * 0.78) if bw != bh else None)
+    if pic and rot % 4:
+        pic = pygame.transform.rotate(pic, -90 * (rot % 4))
     if pic:
         layer.blit(pic, pic.get_rect(center=(bw / 2, bh / 2)))
         surf.blit(layer, (ox, oy))
@@ -306,6 +309,11 @@ def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None):
         y += 6
         text(surf, f"Price: {price} ryō", (x, y), 16, GOLD, True)
         y += 22
+    if not d["enemy"]:
+        if price is None:
+            y += 6
+        text(surf, f"Sells for: {sell_value(iid, lvl)} ryō", (x, y), 15, (200, 170, 110))
+        y += 20
     if extra:
         y += 4
         y = text_block(surf, extra, (x, y), rect.width - 28, 14, DIM)

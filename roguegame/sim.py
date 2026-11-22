@@ -40,9 +40,10 @@ def _aura_score(run, inst):
     return score
 
 
-def pack(run):
+def pack(run, merge=True):
     """Merge duplicates, then fill the kit with the most valuable items; aura items go where they buff most."""
-    run.auto_merge()
+    if merge:
+        run.auto_merge()
     items = run.all_items()
     run.bag.items, run.stash.items = [], []
     actives = sorted([i for i in items if not i.data.get("aura")], key=item_value, reverse=True)

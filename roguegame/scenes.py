@@ -6,21 +6,36 @@ import pygame
 
 from . import ui
 from .ui import W, H, text, text_block, panel, Button
-from .data import ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE
+from .data import ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE, sell_value
 from . import save
 from .run import RunState
 from .combat import make_battle, effective_stats
 from .events import pick_event, options_for, resolve
+from .inventory import ItemInst
+from .sim import pack
 
 CUR = "ryō"
 
 
 class Scene:
+    map_ok = False          # screens set this to show the Map button (and allow the M key)
+
     def __init__(self, game):
         self.game = game
         self.buttons = []
+        self._map_btn = Button((W - 118, 7, 104, 34), "Map (M)", self.open_map, 16)
+
+    def open_map(self):
+        if self.game.run is not None:
+            self.game.change(MapScene(self.game, back=self))
 
     def handle(self, ev):
+        if self.map_ok:
+            if self._map_btn.handle(ev):
+                return True
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_m:
+                self.open_map()
+                return True
         for b in list(self.buttons):
             if b.handle(ev):
                 return True
@@ -35,6 +50,8 @@ class Scene:
     def draw_buttons(self, s):
         for b in self.buttons:
             b.draw(s)
+        if self.map_ok:
+            self._map_btn.draw(s)
 
 
 def top_bar(s, run, title=""):
@@ -47,7 +64,7 @@ def top_bar(s, run, title=""):
     st = STAGES[run.stage]
     text(s, f"Stage {run.stage}/3 - {st['name']}", (460, 11), 20, ui.TEXT, True)
     if title:
-        text(s, title, (W - 16, 11), 20, ui.DIM, True, right=True)
+        text(s, title, (W - 130, 11), 20, ui.DIM, True, right=True)
 
 
 def draw_petals(s, t, n=45):
@@ -162,12 +179,19 @@ NODE_ART = {"fight": "map_fight", "elite": "map_elite", "boss": "map_boss", "eve
 
 
 class MapScene(Scene):
-    def __init__(self, game):
+    def __init__(self, game, back=None):
         super().__init__(game)
         self.run = game.run
         self.t = 0
-        save.save_run(self.run)
-        self.buttons = [Button((W - 210, H - 70, 190, 50), "Your Kit", self.open_bag)]
+        self.back = back             # set when viewing the map from another screen
+        if back is None:
+            save.save_run(self.run)
+            self.buttons = [Button((W - 210, H - 70, 190, 50), "Your Kit", self.open_bag)]
+        else:
+            self.buttons = [Button((W - 210, H - 70, 190, 50), "Back", self.go_back)]
+
+    def go_back(self):
+        self.game.change(self.back)
 
     def open_bag(self):
         self.game.change(InventoryScene(self.game, "manage", on_done=lambda: MapScene(self.game)))
@@ -187,6 +211,11 @@ class MapScene(Scene):
     def handle(self, ev):
         if super().handle(ev):
             return True
+        if self.back is not None:   # viewing only: M or Esc returns
+            if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_m, pygame.K_ESCAPE):
+                self.go_back()
+                return True
+            return False
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             rc = self.node_at(ev.pos)
             if rc:
@@ -219,7 +248,7 @@ class MapScene(Scene):
     def draw(self, s):
         s.fill(ui.BG)
         run = self.run
-        top_bar(s, run, "Choose your path")
+        top_bar(s, run, "Choose your path" if self.back is None else "Map (viewing)")
         st = STAGES[run.stage]
         text(s, st["name"], (30, 58), 24, ui.GOLD, True)
         text(s, st["subtitle"], (30, 88), 15, ui.DIM)
@@ -299,6 +328,7 @@ CELL = 56
 
 class InventoryScene(Scene):
     """mode: 'shop' (buy offers), 'reward' (take one offer free), 'manage' (just arrange)."""
+    map_ok = True
 
     def __init__(self, game, mode, offers=None, on_done=None, title="", message="", drops=()):
         super().__init__(game)
@@ -322,6 +352,10 @@ class InventoryScene(Scene):
         if mode == "shop":
             self.reroll_btn = Button((850, 228, 180, 44), "", self.reroll, 18)
             self.buttons.append(self.reroll_btn)
+        self.buttons += [Button((850, 92, 200, 40), "Auto-arrange", self.auto_arrange, 17),
+                         Button((1060, 92, 200, 40), "Merge all", self.merge_all, 17)]
+        self.undo = None                      # last Shift+click sale, undoable for a few seconds
+        self.undo_btn = Button((470, 616, 200, 32), "Undo sell", self.undo_sell, 15)
 
     # ---------- actions
     def done(self):
@@ -343,7 +377,67 @@ class InventoryScene(Scene):
     def say(self, msg):
         self.flash_msg, self.flash_t = msg, 2.5
 
-    def click_offer(self, i):
+    def other_grid(self, grid):
+        return self.run.stash if grid is self.run.bag else self.run.bag
+
+    def quick_move(self, grid, inst):
+        """Ctrl+click: send an item to the other bag wherever it fits (trying every rotation)."""
+        dest = self.other_grid(grid)
+        x, y, rot = inst.x, inst.y, inst.rot
+        grid.remove(inst)
+        if dest.first_fit(inst):
+            self.say(f"{ITEMS[inst.id]['name']} -> {'kit' if dest is self.run.bag else 'travel chest'}")
+        else:
+            inst.rot = rot
+            grid.place(inst, x, y)
+            self.say(f"No room in the {'kit' if dest is self.run.bag else 'travel chest'}.")
+
+    def quick_sell(self, grid, inst):
+        """Shift+click: sell instantly (with a few seconds to undo)."""
+        value = sell_value(inst.id, inst.level)
+        self.undo = dict(inst=inst, grid=grid, x=inst.x, y=inst.y, rot=inst.rot, value=value, t=5.0)
+        grid.remove(inst)
+        self.run.gold += value
+        self.say(f"Sold {ITEMS[inst.id]['name']} for {value} {CUR}.")
+
+    def undo_sell(self):
+        u = self.undo
+        if not u or self.run.gold < u["value"]:
+            return
+        inst = u["inst"]
+        inst.rot = u["rot"]
+        if not (u["grid"].place(inst, u["x"], u["y"]) or u["grid"].first_fit(inst)
+                or self.other_grid(u["grid"]).first_fit(inst)):
+            return self.say("No room to put it back.")
+        self.run.gold -= u["value"]
+        self.undo = None
+        self.say(f"Got your {ITEMS[inst.id]['name']} back.")
+
+    def rotate_in_place(self, grid, inst):
+        """Right-click a placed item: turn it 90 degrees where it is, if it fits."""
+        x, y, rot = inst.x, inst.y, inst.rot
+        grid.remove(inst)
+        inst.rot = (rot + 1) % 4
+        if not grid.place(inst, x, y):
+            inst.rot = rot
+            grid.place(inst, x, y)
+            self.say("No room to rotate it there - pick it up to rotate and move it.")
+
+    def auto_arrange(self):
+        pack(self.run, merge=False)
+        self.say("Arranged: best items in your kit, aura items next to what they boost.")
+
+    def merge_all(self):
+        n = self.run.auto_merge()
+        self.say(f"Merged {n} pair{'s' if n != 1 else ''}." if n else "Nothing to merge.")
+
+    def add_offer(self, iid, to_kit):
+        if not to_kit:
+            return self.run.add_item(iid)
+        inst = ItemInst(iid)
+        return self.run.bag.first_fit(inst) or self.run.stash.first_fit(inst)
+
+    def click_offer(self, i, to_kit=False):
         iid = self.offers[i]
         if iid is None:
             return
@@ -351,12 +445,12 @@ class InventoryScene(Scene):
         if self.mode == "shop":
             if self.run.gold < price:
                 return self.say(f"Not enough {CUR}.")
-            if not self.run.add_item(iid):
+            if not self.add_offer(iid, to_kit):
                 return self.say("No room! Pawn something or rearrange.")
             self.run.gold -= price
             self.offers[i] = None
         elif self.mode == "reward":
-            if not self.run.add_item(iid):
+            if not self.add_offer(iid, to_kit):
                 return self.say("No room! Pawn something or rearrange.")
             self.offers = [None] * len(self.offers)
             self.say(f"Took {ITEMS[iid]['name']}.")
@@ -397,7 +491,7 @@ class InventoryScene(Scene):
     def drop(self, pos):
         inst = self.held["inst"]
         if self.sell_rect.collidepoint(pos):
-            value = max(1, ITEMS[inst.id]["price"] // 2)
+            value = sell_value(inst.id, inst.level)
             self.run.gold += value
             self.say(f"Pawned {ITEMS[inst.id]['name']} for {value} {CUR}.")
             self.held = None
@@ -413,9 +507,36 @@ class InventoryScene(Scene):
         if tgt and tgt[0].place(inst, tgt[2], tgt[3]):
             self.held = None
             return
+        if tgt and self.try_swap(inst, *tgt):
+            return
         if other and other.id == inst.id:
             self.say("Only items of the same level can merge (max level 3).")
         self.return_held()
+
+    def try_swap(self, inst, grid, o, gx, gy):
+        """Dropped onto exactly one item: put the held item there and send that one where ours came from."""
+        cells = inst.cells_at(gx, gy)
+        if not all(0 <= cx < grid.w and 0 <= cy < grid.h for cx, cy in cells):
+            return False
+        occ = grid.occupied()
+        hit = {occ[c] for c in cells if c in occ}
+        if len(hit) != 1:
+            return False
+        other = hit.pop()
+        ox, oy = other.x, other.y
+        grid.remove(other)
+        if not grid.place(inst, gx, gy):
+            grid.place(other, ox, oy)
+            return False
+        h = self.held
+        home = h["grid"]
+        if home.place(other, h["x"], h["y"]) or home.first_fit(other) or self.other_grid(home).first_fit(other):
+            self.held = None
+            self.say(f"Swapped {ITEMS[inst.id]['name']} and {ITEMS[other.id]['name']}.")
+            return True
+        grid.remove(inst)                   # nowhere for the other item to go: undo
+        grid.place(other, ox, oy)
+        return False
 
     def return_held(self):
         h = self.held
@@ -439,13 +560,31 @@ class InventoryScene(Scene):
                 if self.held:
                     self.drop(ev.pos)
                     return True
+                mods = pygame.key.get_mods()
+                ctrl, shift = mods & pygame.KMOD_CTRL, mods & pygame.KMOD_SHIFT
+                if self.undo and self.undo_btn.handle(ev):
+                    return True
                 for i, r in enumerate(self.offer_rects):
                     if r.collidepoint(ev.pos):
-                        self.click_offer(i)
+                        self.click_offer(i, to_kit=bool(ctrl))
                         return True
+                hit = self.grid_at(ev.pos)
+                inst = hit[0].item_at(hit[2], hit[3]) if hit else None
+                if inst and ctrl:
+                    self.quick_move(hit[0], inst)
+                    return True
+                if inst and shift:
+                    self.quick_sell(hit[0], inst)
+                    return True
                 self.pick_up(ev.pos)
             elif ev.button == 3:
-                self.rotate_held()
+                if self.held:
+                    self.rotate_held()
+                else:
+                    hit = self.grid_at(ev.pos)
+                    inst = hit[0].item_at(hit[2], hit[3]) if hit else None
+                    if inst:
+                        self.rotate_in_place(hit[0], inst)
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1 and self.held:
             h = self.held
             o = self.bag_o if h["grid"] is self.run.bag else self.stash_o
@@ -454,12 +593,18 @@ class InventoryScene(Scene):
                 self.drop(ev.pos)
         elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_r:
             self.rotate_held()
+        elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and self.held:
+            self.return_held()
         elif ev.type == pygame.MOUSEWHEEL:
             self.rotate_held()
         return False
 
     def update(self, dt):
         self.flash_t = max(0, self.flash_t - dt)
+        if self.undo:
+            self.undo["t"] -= dt
+            if self.undo["t"] <= 0:
+                self.undo = None
         if self.mode == "shop":
             c = self.reroll_cost()
             self.reroll_btn.label = f"Reroll ({c})"
@@ -480,7 +625,7 @@ class InventoryScene(Scene):
                     pygame.draw.rect(s, (64, 44, 28), r, 1)
         for inst in grid.items:
             ui.draw_item(s, inst.id, inst.shape, o[0] + inst.x * CELL, o[1] + inst.y * CELL, CELL,
-                         highlight=self.highlight.get(inst.uid), level=inst.level)
+                         highlight=self.highlight.get(inst.uid), level=inst.level, rot=inst.rot)
 
     def draw(self, s):
         s.fill(ui.BG)
@@ -544,7 +689,9 @@ class InventoryScene(Scene):
 
         hov_sell = self.sell_rect.collidepoint(mouse) and self.held
         panel(s, self.sell_rect, (70, 30, 30) if hov_sell else (40, 26, 30), ui.RED if hov_sell else ui.LINE)
-        text(s, "PAWN: drop here to sell (half price)", self.sell_rect.center, 16, ui.TEXT, True, center=True)
+        pawn = (f"PAWN: drop to sell for {sell_value(self.held['inst'].id, self.held['inst'].level)} {CUR}"
+                if self.held else "PAWN: drop here to sell (half price)")
+        text(s, pawn, self.sell_rect.center, 16, ui.TEXT, True, center=True)
 
         rp = pygame.Rect(850, 290, 410, 330)
         if self.held:
@@ -562,10 +709,13 @@ class InventoryScene(Scene):
                 y = text_block(s, f"{TECHNIQUES[tid]['name']}: {TECHNIQUES[tid]['desc']}", (rp.x + 14, y),
                                rp.width - 28, 14, ui.GREEN)
             y += 6
-            for ln in ["Click / drag to move. Right-click, R or wheel: rotate.",
-                       "Drop on Pawn to sell. Hover anything for details."]:
-                text(s, ln, (rp.x + 14, y), 14, ui.DIM)
-                y += 20
+            for ln in ["Click or drag to move. Drop on another item to swap.",
+                       "Right-click: rotate (in place, or while held). Esc: cancel.",
+                       "Ctrl+click: send to the other bag / buy straight into kit.",
+                       "Shift+click: sell instantly (Undo for 5s).",
+                       "Drop on an identical item to merge. M: map."]:
+                text(s, ln, (rp.x + 14, y), 13, ui.DIM)
+                y += 18
 
         if self.held:
             inst = self.held["inst"]
@@ -580,17 +730,22 @@ class InventoryScene(Scene):
                         g.fill((80, 220, 100, 70) if ok else (230, 60, 60, 80))
                         s.blit(g, r)
             tl = self.held_topleft(mouse)
-            ui.draw_item(s, inst.id, inst.shape, tl[0], tl[1], CELL, alpha=200, level=inst.level)
+            ui.draw_item(s, inst.id, inst.shape, tl[0], tl[1], CELL, alpha=200, level=inst.level, rot=inst.rot)
 
         if self.flash_t > 0:
             text(s, self.flash_msg, (W // 2, H - 40), 20, ui.GOLD, True, center=True)
         if self.held is None:
             self.draw_buttons(s)
+            if self.undo:
+                self.undo_btn.label = f"Undo sell ({int(self.undo['t']) + 1}s)"
+                self.undo_btn.enabled = self.run.gold >= self.undo["value"]
+                self.undo_btn.draw(s)
 
 
 # =================================================================== techniques
 class TechniqueScene(Scene):
     """Pick 1 of 3 permanent class upgrades (after elites and bosses)."""
+    map_ok = True
 
     def __init__(self, game, then):
         super().__init__(game)
@@ -655,6 +810,8 @@ def intent_chips(st):
 
 
 class BattleScene(Scene):
+    map_ok = True
+
     def __init__(self, game, enemy_id, kind, scale=1.0):
         super().__init__(game)
         self.run = run = game.run
@@ -763,6 +920,9 @@ class BattleScene(Scene):
                 label = {"hex": "HEX", "kiburst": "KI BURST", "counter": "COUNTER"}[k]
                 self.float_text(side, f"{label} -{a}", (255, 170, 90) if k != "hex" else (170, 120, 220),
                                 26 if k == "kiburst" else 20)
+            elif k in ("grow", "steal", "cleanse"):
+                col = {"grow": (255, 120, 90), "steal": (150, 180, 255), "cleanse": (200, 255, 200)}[k]
+                self.float_text(side, e["text"], col, 18)
             elif k == "phase":
                 self.banner, self.banner_t = e["text"], 3.0
         self.battle.events.clear()
@@ -911,6 +1071,8 @@ class BattleScene(Scene):
 
 # =================================================================== rest
 class RestScene(Scene):
+    map_ok = True
+
     def __init__(self, game):
         super().__init__(game)
         self.run = run = game.run
@@ -943,6 +1105,8 @@ class RestScene(Scene):
 
 # =================================================================== stage intro / end
 class StageScene(Scene):
+    map_ok = True
+
     def __init__(self, game, first=False):
         super().__init__(game)
         self.run = game.run
@@ -994,6 +1158,8 @@ class EndScene(Scene):
 
 # =================================================================== ? events
 class EventScene(Scene):
+    map_ok = True
+
     def __init__(self, game, ev):
         super().__init__(game)
         self.run = game.run

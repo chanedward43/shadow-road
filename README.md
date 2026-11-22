@@ -18,6 +18,9 @@ python main.py
 - Click map nodes to travel. Click or drag items to move them in your kit.
 - Right-click, **R** or the mouse wheel rotates the item you're holding.
 - Drop an item on an identical one to merge it (up to level 3). Drop it on **PAWN** to sell.
+  Every tooltip shows what an item sells for (half its price, times its level).
+- **Map (M)** button on every screen (shop, rewards, events, battles): check the road ahead, then
+  press M, Esc or Back to return where you were.
 - In battle: 1x / 2x / 4x speed, or Skip.
 
 ## Development

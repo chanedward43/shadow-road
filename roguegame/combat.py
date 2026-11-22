@@ -6,7 +6,7 @@ for asynchronous PvP (fight another player's saved build "ghost").
 import copy
 import random
 
-from .data import ITEMS, CHARACTERS, ENEMIES, TECHNIQUES
+from .data import ITEMS, CHARACTERS, ENEMIES, TECHNIQUES, level_stats
 
 TICK = 0.05
 FATIGUE_START = 25.0   # after this many seconds both sides take growing damage
@@ -15,7 +15,7 @@ CRIT_MULT = 2.0
 BASE_CRIT = 0.05
 MAX_EVADE = 0.6
 STUN_IMMUNITY = 2.0    # after a stun ends, the target can't be stunned again for this long
-CURSE_PER_STACK = 0.04 # each Curse stack: enemy deals 4% less damage
+CURSE_PER_STACK = 0.05 # each Curse stack: enemy deals 5% less damage
 CURSE_CAP = 0.6
 SUMMON_CAP = 5
 KI_MAX = 12
@@ -109,6 +109,7 @@ class CItem:
         self.timer = 0.0
         self.flash = 0.0
         self.triggers = 0
+        self.bonus = 0               # Grow: damage this item has gained during the battle
 
 
 class Fighter:
@@ -187,15 +188,16 @@ def player_fighter(run):
         f.poison_on_crit = 2
         f.poison_interval = 0.8
     elif run.char_id == "onmyoji":
-        f.summon_speed = 1.25
+        f.summon_speed = 1.4
+        f.start_curse += 2
         bonus = int(mods.get("summon_dmg", 0))
         for _ in range(1 + int(mods.get("extra_summon", 0))):
-            f.summons.append(new_summon(dict(name="Paper Crane", dmg=(2 + bonus, 3 + bonus), cd=1.6,
+            f.summons.append(new_summon(dict(name="Paper Crane", dmg=(3 + bonus, 4 + bonus), cd=1.6,
                                              curse=mods.get("summon_curse", 0))))
     elif run.char_id == "sohei":
         f.ki_max = KI_MAX + int(mods.get("ki_max", 0))
-        f.counter += 1 + int(mods.get("counter", 0))
-        f.ki = int(mods.get("ki_start", 0))
+        f.counter += 2 + int(mods.get("counter", 0))
+        f.ki = 3 + int(mods.get("ki_start", 0))
         f.ki_burst_bonus = int(mods.get("ki_burst_bonus", 0))
     f.block += mods.get("s_block", 0)
     f.resolve_max += mods.get("resolve_max", 0)
@@ -231,8 +233,10 @@ def enemy_fighter(enemy_id, scale=1.0):
     f.evade = e.get("evade", 0)
     f.poison_immune = e.get("poison_immune", False)
     f.crit += e.get("crit", 0)
-    for iid in e["items"]:
+    for iid in e["items"]:                     # unique enemy-only moves
         f.add_stats(_scale_stats(ITEMS[iid], scale))
+    for iid, lvl in e.get("kit", []):          # real items the player can also own
+        f.add_stats(_scale_stats(level_stats(ITEMS[iid], lvl), scale))
     f.phases = [dict(p, done=False, scale=scale) for p in e.get("phases", [])]
     return f
 
@@ -246,6 +250,7 @@ def make_battle(run, enemy_id, scale=1.0, seed=0):
         for ci in e.items:
             ci.cd = round(ci.cd * (1 + slow), 2)
     e.curse += p.start_curse
+    p.curse += e.start_curse
     return Battle(p, e, seed)
 
 
@@ -295,7 +300,7 @@ class Battle:
         if self.rng.random() < min(MAX_EVADE, foe.evade):
             self._emit("evade", 1 - side)
             return False
-        dmg = self.rng.randint(*st["dmg"]) + me.resolve
+        dmg = self.rng.randint(*st["dmg"]) + me.resolve + ci.bonus
         if ci.triggers == 1 and me.first_strike > 1:
             dmg = int(dmg * me.first_strike)
         crit = self.rng.random() < me.crit + st.get("crit", 0)
@@ -362,10 +367,22 @@ class Battle:
                 self._damage(side, foe.thorns, "thorns")
             if landed and foe.counter:  # counter-attacks: once per attacking item, grows with Ki
                 self._damage(side, foe.counter + foe.ki // 2, "counter")
+            if landed and st.get("grow"):
+                ci.bonus += st["grow"]
+                self._emit("grow", side, ci.bonus, text=f"{ci.name} +{ci.bonus}")
         if st.get("sunder") and foe.block > 0:
             lost = int(foe.block * st["sunder"])
             foe.block -= lost
             self._emit("sunder", 1 - side, lost, text=f"ARMOR BROKEN -{lost}")
+        if st.get("steal_block") and foe.block > 0:
+            taken = min(foe.block, st["steal_block"])
+            foe.block -= taken
+            me.block += taken
+            self._emit("steal", side, taken, text=f"STOLE {taken} BLOCK")
+        if st.get("cleanse") and (me.poison or me.burn):
+            me.poison = max(0, me.poison - st["cleanse"])
+            me.burn = max(0, me.burn - st["cleanse"])
+            self._emit("cleanse", side, st["cleanse"], text="CLEANSED")
         if st.get("block"):
             me.block += st["block"]
             self._emit("block", side, st["block"])

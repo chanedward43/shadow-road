@@ -340,7 +340,7 @@ def describe_stats(st):
             extra = (" + Burn" if sm.get("burn") else "") + (" + Curse" if sm.get("curse") else "")
             out.append(f"  Summon a {sm['name']} ({sm['dmg'][0]}-{sm['dmg'][1]} dmg every {sm['cd']:.1f}s{extra})")
         if st.get("curse"):
-            out.append(f"  Curse {st['curse']} (enemy deals 4% less damage per Curse)")
+            out.append(f"  Curse {st['curse']} (enemy deals 5% less damage per Curse)")
         if st.get("hex"):
             out.append(f"  Hex: deal {st['hex']} damage per Curse on the enemy")
         if st.get("ki"):
@@ -349,6 +349,12 @@ def describe_stats(st):
             out.append(f"  Ki Burst: spend all Ki, deal {st['ki_burst']} per Ki (6+ Ki stuns)")
         if st.get("per_tag"):
             out.append(f"  +{st['per_tag'][1]} damage per other {st['per_tag'][0]} in your kit")
+        if st.get("grow"):
+            out.append(f"  Grow: +{st['grow']} damage every hit (this battle)")
+        if st.get("steal_block"):
+            out.append(f"  Steal up to {st['steal_block']} Block from the enemy")
+        if st.get("cleanse"):
+            out.append(f"  Cleanse {st['cleanse']} Poison and Burn from yourself")
         if st.get("dodge"):
             out.append(f"  Gain {st['dodge']} Dodge (evade the next hit)")
         if st.get("regen"):
@@ -405,6 +411,11 @@ def describe_stats(st):
 MAX_LEVEL = 3
 
 
+def sell_value(iid, level=1):
+    """What the pawn shop pays: half the price, times the level (a merged item used up extra copies)."""
+    return max(1, ITEMS[iid]["price"] * level // 2)
+
+
 def level_stats(st, level):
     """Return a copy of an item's stats scaled to its level (+50% numbers per level, 8% faster)."""
     import copy as _copy
@@ -416,7 +427,8 @@ def level_stats(st, level):
     if out.get("dmg"):
         out["dmg"] = (round(out["dmg"][0] * mult), round(out["dmg"][1] * mult))
     for k in ("block", "heal", "poison", "burn", "regen", "s_block", "s_hp", "s_regen", "s_thorns", "dodge",
-              "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "s_crit_block", "s_crit_poison"):
+              "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "s_crit_block", "s_crit_poison",
+              "grow", "steal_block", "cleanse"):
         if out.get(k):
             out[k] = max(out[k] + 1, round(out[k] * mult))
     for k in ("s_crit", "s_evade", "crit", "lifesteal"):
@@ -604,16 +616,16 @@ _load_balance_overrides()
 #   aura keys: summon_dmg (+dmg to adjacent summon items), ki (+Ki to adjacent Ki items)
 
 # ---------------------------------------------------------------- ONMYOJI: shikigami & curses
-item("paper_shikigami", "Paper Shikigami", S1, "common", ["summon", "charm"], cls="onmyoji", cd=4.0,
-     summon=dict(name="Paper Crane", dmg=(2, 3), cd=1.6), price=4)
+item("paper_shikigami", "Paper Shikigami", S1, "common", ["summon", "charm"], cls="onmyoji", cd=3.0,
+     summon=dict(name="Paper Crane", dmg=(3, 4), cd=1.6), price=4)
 item("binding_ofuda", "Ofuda of Binding", S1, "common", ["curse", "charm"], cls="onmyoji", cd=3.0, curse=2)
 item("spirit_brush", "Spirit Brush", V2, "rare", ["tool"], cls="onmyoji",
      aura=dict(tags=("summon",), summon_dmg=1, speed=0.1), price=7)
 item("fox_shikigami", "Fox Shikigami", SQ, "rare", ["summon", "fire"], cls="onmyoji", cd=5.0,
-     summon=dict(name="Spirit Fox", dmg=(3, 4), cd=1.8, burn=1), price=8)
+     summon=dict(name="Spirit Fox", dmg=(4, 5), cd=1.8, burn=1), price=8)
 item("yin_yang_mirror", "Yin-Yang Mirror", S1, "rare", ["curse", "armor"], cls="onmyoji", cd=4.0, curse=2, block=4)
 item("onmyo_compass", "Onmyō Compass", S1, "rare", ["curse", "tool"], cls="onmyoji", s_curse=3, price=6)
-item("hex_scroll", "Hex of Five Elements", H2, "epic", ["scroll", "curse"], cls="onmyoji", cd=4.0, hex=3, price=12)
+item("hex_scroll", "Hex of Five Elements", H2, "epic", ["scroll", "curse"], cls="onmyoji", cd=4.0, hex=4, price=12)
 item("seimei_star", "Seimei's Star", S1, "epic", ["charm"], cls="onmyoji",
      aura=dict(tags=("summon",), speed=0.3, summon_dmg=1), price=12)
 item("crow_shikigami", "Crow Shikigami", V2, "epic", ["summon", "curse"], cls="onmyoji", cd=4.5,
@@ -622,15 +634,15 @@ item("twelve_generals", "Twelve Heavenly Generals", R23, "legendary", ["summon",
      cd=6.0, summon=dict(name="Heavenly General", dmg=(7, 10), cd=2.0), curse=2, price=19)
 
 # ---------------------------------------------------------------- SOHEI: Ki & counter-attacks
-item("temple_naginata", "Temple Naginata", V3, "common", ["weapon", "ki"], cls="sohei", cd=2.3, dmg=(5, 8), ki=1,
+item("temple_naginata", "Temple Naginata", V3, "common", ["weapon", "ki"], cls="sohei", cd=2.3, dmg=(6, 9), ki=1,
      price=5)
-item("kesa_robe", "Kesa Robe", SQ, "common", ["armor"], cls="sohei", s_block=8, s_counter=1, price=4)
+item("kesa_robe", "Kesa Robe", SQ, "common", ["armor"], cls="sohei", s_block=10, s_counter=1, price=4)
 item("prayer_bell", "Hand Bell", S1, "rare", ["charm", "ki"], cls="sohei", cd=5.0, ki=2, heal=3)
 item("shakujo", "Shakujō", V3, "rare", ["weapon", "ki"], cls="sohei", cd=1.8, dmg=(3, 5), stun=0.2, ki=1, price=7)
 item("iron_sandals", "Iron Geta", H2, "rare", ["armor"], cls="sohei", s_counter=2, s_hp=8)
 item("sutra_scroll", "Heart Sutra", H2, "rare", ["scroll"], cls="sohei", aura=dict(tags=("ki",), ki=1, speed=0.15),
      price=7)
-item("temple_bell", "Great Temple Bell", SQ, "epic", ["charm", "ki"], cls="sohei", cd=6.0, ki_burst=3, price=12)
+item("temple_bell", "Great Temple Bell", SQ, "epic", ["charm", "ki"], cls="sohei", cd=5.0, ki_burst=4, price=12)
 item("fudo_statue", "Fudō Myōō Idol", SQ, "epic", ["charm", "armor"], cls="sohei", s_counter=3, s_thorns=2,
      s_block=10, price=12)
 item("benkei_weapons", "Benkei's Seven Weapons", R23, "legendary", ["weapon", "ki"], cls="sohei", cd=2.0,
@@ -685,16 +697,18 @@ item("mirror_yata", "Yata no Kagami", S1, "legendary", ["charm", "armor"], s_blo
 
 # ---------------------------------------------------------------- the two new classes
 CHARACTERS["onmyoji"] = dict(
-    name="Onmyōji", color=(110, 200, 220), glyph="O", hp=55, portrait="onmyoji",
+    name="Onmyōji", color=(110, 200, 220), glyph="O", hp=60, portrait="onmyoji",
     style="Summons / Curses / Slow build",
-    passive="Shikigami Pact: start every battle with a Paper Crane shikigami. Your shikigami attack 25% faster.",
+    passive="Shikigami Pact: start every battle with a Paper Crane shikigami and Curse 2 on the enemy. "
+            "Your shikigami attack 40% faster.",
     lore="A court diviner who reads the stars and binds spirits to paper. The Shogun's demons are a debt to collect.",
     start=["paper_shikigami", "binding_ofuda", "onigiri"],
 )
 CHARACTERS["sohei"] = dict(
-    name="Sōhei", color=(230, 150, 60), glyph="H", hp=72, portrait="sohei",
+    name="Sōhei", color=(230, 150, 60), glyph="H", hp=76, portrait="sohei",
     style="Counter-attacks / Ki / Endurance",
-    passive="Iron Faith: when an enemy attack lands on you, gain 1 Ki (max 12) and strike back for 1 + half your Ki.",
+    passive="Iron Faith: start every battle with 3 Ki. When an enemy attack lands on you, gain 1 Ki (max 12) "
+            "and strike back for 2 + half your Ki.",
     lore="A warrior monk of Mount Hiei. Every blow he takes is a prayer answered with a heavier one.",
     start=["temple_naginata", "kesa_robe", "onigiri"],
 )
@@ -734,3 +748,91 @@ BUILDS = {
 }
 
 item("spring_gourd", "Mountain Spring Gourd", V2, "common", ["food", "ki"], cls="sohei", cd=5.0, heal=5, ki=1)
+
+
+# ================================================================ v4: GROW / STEAL BLOCK / CLEANSE items
+#   grow=N        - this weapon gains +N damage every time it hits (for the rest of the battle)
+#   steal_block=N - take up to N Block from the enemy and add it to yours
+#   cleanse=N     - remove N Poison and N Burn from yourself
+item("bokken", "Training Bokken", V2, "common", ["weapon"], cd=1.5, dmg=(1, 2), grow=1)
+item("purifying_salt", "Purifying Salt", S1, "common", ["charm"], cd=4.0, cleanse=3, heal=2)
+item("thieves_hook", "Thief's Grapnel", V2, "rare", ["weapon"], cd=2.0, dmg=(2, 4), steal_block=5)
+item("sacred_sake", "Sacred Miki Sake", V2, "rare", ["food"], cd=6.0, heal=8, cleanse=4)
+item("oni_gauntlet", "Oni Gauntlet", SQ, "epic", ["weapon"], cd=2.4, dmg=(5, 8), grow=2, price=12)
+item("taiko_drum", "War Taiko", SQ, "epic", ["charm"], s_hp=10, aura=dict(tags=("weapon",), speed=0.2), price=12)
+item("yoroi_doshi", "Yoroi-dōshi", V2, "rare", ["weapon"], cls="samurai", cd=1.7, dmg=(3, 5), sunder=0.3)
+item("muramasa", "Muramasa's Grudge", V3, "legendary", ["weapon"], cls="samurai", cd=1.8, dmg=(6, 9), grow=2,
+     lifesteal=0.1, price=19)
+item("shadow_clone", "Shadow Clone Scroll", H2, "epic", ["scroll", "summon"], cls="ninja", cd=6.0,
+     summon=dict(name="Shadow Clone", dmg=(3, 5), cd=1.0), price=12)
+item("smoke_fan", "Smoke Fan", S1, "rare", ["tool"], cls="kunoichi", cd=4.0, dodge=1, cleanse=2)
+item("serpent_hairpin", "Serpent Hairpin", V2, "epic", ["weapon"], cls="kunoichi", cd=1.3, dmg=(3, 5), crit=0.2,
+     grow=1, price=12)
+item("purify_ofuda", "Purification Ofuda", S1, "rare", ["charm", "curse"], cls="onmyoji", cd=4.0, cleanse=3, curse=1)
+item("prayer_wheel", "Prayer Wheel", S1, "rare", ["charm", "ki"], cls="sohei", cd=3.0, ki=1, block=3)
+item("begging_bowl", "Iron Begging Bowl", S1, "rare", ["armor"], cls="sohei", cd=3.5, steal_block=6)
+
+# ---------------------------------------------------------------- boss-only signature moves
+eitem("e_toad_tongue", "Toad Sage's Tongue", cd=1.4, dmg=(4, 6), lifesteal=0.3, steal_block=4)
+eitem("e_bandit_rally", "Bandit King's Rally", cd=6.0, block=10, cleanse=3)
+eitem("e_grudge_flame", "Bell of Dōjō-ji", cd=4.0, burn=3, stun=0.4)
+eitem("e_snow_shroud", "Snow Shroud", cd=5.0, block=14, cleanse=4)
+eitem("e_eight_venoms", "Eight Venoms", cd=3.0, poison=3, steal_block=6)
+
+# ================================================================ ENEMIES FIGHT WITH REAL ITEMS
+# kit = [(item_id, level)]: items the player can also own. Every enemy wields its own drop,
+# so beating it hands you the weapon you just watched it use. "items" keeps the few moves
+# that are unique to that enemy (mostly bosses' signature abilities).
+ENEMY_KITS = {
+    # ---- stage 1
+    "bandit": (["e_dirty_trick"], [("bandit_shiv", 1), ("kasa_hat", 1)]),
+    "kappa": (["e_kappa_claw"], [("kappa_cucumber", 1)]),
+    "tanuki": ([], [("tanuki_leaf", 1), ("tanto", 1)]),
+    "ashigaru": ([], [("ashigaru_yari", 1), ("kasa_hat", 1)]),
+    "wild_boar": (["e_charge"], [("boar_tusk", 1)]),
+    "rogue_monk": ([], [("bo_staff", 1), ("prayer_beads", 1), ("ofuda", 1)]),
+    "ronin_duelist": (["e_quickdraw"], [("ronin_blade", 1), ("iron_fan", 1)]),
+    "kamaitachi": (["e_gale"], [("wind_sickle", 1)]),
+    "kurogane": (["e_cheap_shot", "e_bandit_rally"], [("katana", 2), ("do_armor", 1)]),
+    "gama": (["e_toad_tongue", "e_belly"], [("toad_venom", 1)]),
+    # ---- stage 2
+    "kitsune": ([], [("foxfire_orb", 1), ("whisper_fan", 1)]),
+    "jorogumo": (["e_venom_fang"], [("silk_spool", 1), ("fukiya", 2)]),
+    "kodama": ([], [("kodama_sapling", 1), ("bo_staff", 2), ("bamboo_palisade", 1)]),
+    "karasu_tengu": ([], [("tengu_feather_fan", 1), ("shuriken", 1)]),
+    "chochin": (["e_tongue_lash"], [("chochin_lantern", 1), ("paper_lantern", 1)]),
+    "hitodama": (["e_wisp_touch"], [("hitodama_wisp", 1)]),
+    "nue": ([], [("thunder_drum", 1), ("tekko_kagi", 2), ("toad_venom", 1)]),
+    "rokurokubi": ([], [("long_neck_comb", 1), ("sleep_powder", 1)]),
+    "kiyohime": (["e_grudge_flame"], [("iron_fan", 2), ("nightshade_perfume", 1)]),
+    "yuki_onna": (["e_frost", "e_snow_shroud"], [("yuki_breath", 1), ("kaiken", 2)]),
+    # ---- stage 3
+    "oni": ([], [("oni_club", 1), ("do_armor", 2), ("oni_gauntlet", 1)]),
+    "gashadokuro": ([], [("giant_rib", 1), ("kanabo", 1), ("toad_venom", 2)]),
+    "shadow_clan": ([], [("clan_kunai", 1), ("smoke_bomb", 1), ("shuriken", 2)]),
+    "possessed": ([], [("cursed_katana", 1), ("o_yoroi", 1)]),
+    "nio_guardian": ([], [("nio_fist", 1), ("fudo_statue", 1), ("bamboo_palisade", 1)]),
+    "fire_ninja": ([], [("fire_scroll", 1), ("fire_bomb", 2), ("kunai", 2)]),
+    "tengu_lord": (["e_feathers"], [("tengu_king_fan", 1), ("yumi", 2)]),
+    "hannya": (["e_rage"], [("hannya_mask", 1), ("oni_gauntlet", 1)]),
+    "ashura": (["e_command"], [("masamune", 1), ("o_yoroi", 2)]),
+    "orochi": (["e_orochi_coil", "e_eight_venoms"], [("orochi_fangs", 1), ("fugu", 1)]),
+    "sumo": (["e_sumo_slap"], [("sumo_belt", 1), ("iron_fan", 2)]),
+}
+for _eid, (_unique, _kit) in ENEMY_KITS.items():
+    ENEMIES[_eid]["items"] = _unique
+    ENEMIES[_eid]["kit"] = _kit
+
+# Bosses draw their signature weapon when they transform.
+ENEMIES["kurogane"]["phases"][0]["add"] = ["warlord_blade"]
+ENEMIES["kiyohime"]["phases"][0]["add"] = ["serpent_fan", "e_coil"]
+ENEMIES["ashura"]["phases"][1]["add"] = ["six_arm_blade"]
+ENEMIES["ronin_duelist"]["crit"] = 0.1         # was 0.2: lost 63% of encounters - too punishing for stage 1
+ENEMIES["gashadokuro"]["thorns"] = 0           # its Giant's Rib already gives thorns
+
+# outlier fixes after the kit rework (checked with the before/after strength comparison)
+ENEMIES["nio_guardian"]["thorns"] = 0
+ENEMIES["nio_guardian"]["kit"] = [("nio_fist", 1), ("fudo_statue", 1)]
+ENEMIES["gashadokuro"]["kit"] = [("giant_rib", 1), ("kanabo", 1), ("toad_venom", 1)]
+ENEMIES["yuki_onna"]["kit"] = [("yuki_breath", 1), ("kaiken", 1)]
+ENEMIES["gama"]["kit"] = [("toad_venom", 1), ("toad_scroll", 1)]   # wields its drop (passive Regen)

@@ -64,6 +64,18 @@ class TestContent(unittest.TestCase):
                     for iid in ph.get("add", []):
                         self.assertIn(iid, data.ITEMS)
 
+    def test_enemies_fight_with_real_items(self):
+        for eid, e in data.ENEMIES.items():
+            with self.subTest(enemy=eid):
+                kit = e.get("kit", [])
+                self.assertTrue(kit, "every enemy uses items the player can also own")
+                for iid, lvl in kit:
+                    self.assertFalse(data.ITEMS[iid]["enemy"], f"{iid} must be a player item")
+                    self.assertIn(lvl, range(1, data.MAX_LEVEL + 1))
+                wields = {i for i, _ in kit} | {i for ph in e.get("phases", []) for i in ph.get("add", [])}
+                self.assertIn(data.ENEMY_LOOT[eid], wields, "enemies wield the item they drop")
+                self.assertLessEqual(len(e["items"]), 2, "at most two enemy-only signature moves")
+
     def test_classes(self):
         for cid, ch in data.CHARACTERS.items():
             with self.subTest(cls=cid):
@@ -125,8 +137,8 @@ class TestMechanics(unittest.TestCase):
     def test_curse_reduces_damage_and_hex_scales(self):
         r = self.kit("onmyoji", ["onmyo_compass", "hex_scroll"])
         b = make_battle(r, "kurogane", 1.0, seed=0)
-        self.assertEqual(b.f[1].curse, 3)
-        self.assertEqual(b._cursed(b.f[1], 100), 88)
+        self.assertEqual(b.f[1].curse, 5)                 # 3 from the Compass + 2 from Shikigami Pact
+        self.assertEqual(b._cursed(b.f[1], 100), 75)      # 5 stacks x 5% = 25% less damage
         b.run_to_end()
         self.assertGreater(self.kinds(b).get("hex", 0), 0)
 
@@ -144,10 +156,16 @@ class TestMechanics(unittest.TestCase):
         self.assertEqual(daisho["dmg"][0], base[0] + 3)   # katana + wakizashi + tanto
 
     def test_boss_phases_trigger(self):
-        r = RunState("samurai", 1)
-        r.max_hp = r.hp = 5000                          # survive long enough to see every phase
-        b = self.fight(r, "orochi")
+        b = make_battle(RunState("samurai", 1), "orochi", 1.0, seed=0)
+        boss = b.f[1]
+        moves = len(boss.items)
+        boss.hp = int(boss.max_hp * 0.5)               # below the 66% threshold
+        b._check_phases(1)
+        self.assertEqual(self.kinds(b).get("phase", 0), 1)
+        boss.hp = int(boss.max_hp * 0.2)               # below the 33% threshold
+        b._check_phases(1)
         self.assertEqual(self.kinds(b).get("phase", 0), 2)
+        self.assertEqual(len(boss.items), moves + 2, "each phase adds a move")
 
 
 class TestRunsAndSaves(unittest.TestCase):
@@ -184,6 +202,74 @@ class TestRunsAndSaves(unittest.TestCase):
         self.assertEqual(r.rng.random(), r2.rng.random(), "random state must survive the save")
         save.clear_run()
         self.assertIsNone(save.load_run())
+
+
+class TestBagControls(unittest.TestCase):
+    """The kit / travel-chest controls: swap, Ctrl+click move, Shift+click sell + undo, rotate, arrange."""
+
+    @classmethod
+    def setUpClass(cls):
+        from main import Game
+        from roguegame import scenes
+        cls.scenes = scenes
+        cls.g = Game()
+
+    def scene(self):
+        self.g.run = RunState("samurai", 3)
+        self.g.run.bag.items, self.g.run.stash.items = [], []
+        return self.scenes.InventoryScene(self.g, "manage", on_done=lambda: None)
+
+    def test_ctrl_click_moves_between_bags(self):
+        sc = self.scene()
+        k = ItemInst("katana")
+        sc.run.bag.place(k, 0, 0)
+        sc.quick_move(sc.run.bag, k)
+        self.assertIn(k, sc.run.stash.items)
+        sc.quick_move(sc.run.stash, k)
+        self.assertIn(k, sc.run.bag.items)
+
+    def test_drop_on_item_swaps(self):
+        sc = self.scene()
+        a, b = ItemInst("onigiri"), ItemInst("whetstone")
+        sc.run.bag.place(a, 0, 0)
+        sc.run.stash.place(b, 2, 1)
+        sc.held = dict(inst=a, grid=sc.run.bag, x=0, y=0, rot=0, off=(28, 28))
+        sc.run.bag.remove(a)
+        self.assertTrue(sc.try_swap(a, sc.run.stash, sc.stash_o, 2, 1))
+        self.assertEqual((a.x, a.y), (2, 1))
+        self.assertIn(a, sc.run.stash.items)
+        self.assertIn(b, sc.run.bag.items)
+        self.assertEqual((b.x, b.y), (0, 0))
+
+    def test_shift_click_sell_and_undo(self):
+        sc = self.scene()
+        k = ItemInst("katana", level=2)
+        sc.run.bag.place(k, 1, 1)
+        gold = sc.run.gold
+        sc.quick_sell(sc.run.bag, k)
+        self.assertEqual(sc.run.gold, gold + data.sell_value("katana", 2))
+        self.assertNotIn(k, sc.run.bag.items)
+        sc.undo_sell()
+        self.assertEqual(sc.run.gold, gold)
+        self.assertIn(k, sc.run.bag.items)
+        self.assertEqual((k.x, k.y), (1, 1))
+
+    def test_right_click_rotates_in_place(self):
+        sc = self.scene()
+        k = ItemInst("katana")                     # 1x3 vertical
+        sc.run.bag.place(k, 0, 0)
+        sc.rotate_in_place(sc.run.bag, k)
+        self.assertEqual(k.rot, 1)
+        self.assertEqual(sorted(k.cells), [(0, 0), (1, 0), (2, 0)])
+
+    def test_auto_arrange_and_merge_all(self):
+        sc = self.scene()
+        for iid in ("katana", "katana", "war_banner", "do_armor"):
+            sc.run.stash.first_fit(ItemInst(iid))
+        sc.auto_arrange()
+        self.assertGreaterEqual(len(sc.run.bag.items), 3)
+        sc.merge_all()
+        self.assertEqual([i.level for i in sc.run.all_items() if i.id == "katana"], [2])
 
 
 class TestScreens(unittest.TestCase):

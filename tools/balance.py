@@ -109,6 +109,10 @@ def summary_line(res):
     return " | ".join(parts)
 
 
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
 def autotune(bal, args, pool, log):
     for rnd in range(args.rounds):
         res = measure(args.eval, bal, pool)
@@ -118,13 +122,12 @@ def autotune(bal, args, pool, log):
         log(f"  round {rnd + 1}: avg win {w*100:.1f}% (target {args.target*100:.0f}%), "
             f"mobs cause {mob_share*100:.0f}% of deaths  [{summary_line(res)}]")
         changed = False
-        if w > args.target + 0.04:
+        # Proportional steps: a big miss gets a big correction, a small miss a small one.
+        if abs(w - args.target) > 0.04:
+            f = clamp(((w + 0.02) / (args.target + 0.02)) ** 0.5, 0.75, 1.2)
             for k in bal["stage_mult"]:
-                bal["stage_mult"][k] = round(bal["stage_mult"][k] * 1.06, 3)
-            changed = True
-        elif w < args.target - 0.04:
-            for k in bal["stage_mult"]:
-                bal["stage_mult"][k] = round(bal["stage_mult"][k] * 0.95, 3)
+                bal["stage_mult"][k] = round(bal["stage_mult"][k] * f, 3)
+            log(f"    stages x{f:.2f}")
             changed = True
         if mob_share < 0.30:
             bal["fight_mult"] = round(bal["fight_mult"] * 1.08, 3)
@@ -135,11 +138,10 @@ def autotune(bal, args, pool, log):
             bal["fight_mult"] = round(bal["fight_mult"] * 0.95, 3)
             changed = True
         for c, s in st.items():
-            if s["win_rate"] > w + 0.07:
-                bal["class_hp"][c] = round(bal["class_hp"].get(c, 1.0) * 0.95, 3)
-                changed = True
-            elif s["win_rate"] < w - 0.07:
-                bal["class_hp"][c] = round(bal["class_hp"].get(c, 1.0) * 1.06, 3)
+            if abs(s["win_rate"] - w) > 0.05:      # weaker class: more HP, stronger class: less
+                f = clamp(((w + 0.03) / (s["win_rate"] + 0.03)) ** 0.35, 0.85, 1.2)
+                bal["class_hp"][c] = round(bal["class_hp"].get(c, 1.0) * f, 3)
+                log(f"    {c} HP x{f:.2f}")
                 changed = True
         if not changed:
             log("  balanced: every target is inside its band.")
@@ -193,6 +195,8 @@ def main():
     ap.add_argument("--autotune", action="store_true")
     ap.add_argument("--target", type=float, default=0.20, help="target win rate for a skilled player")
     ap.add_argument("--rounds", type=int, default=6)
+    ap.add_argument("--skip-train", action="store_true",
+                    help="reuse the agents saved in assets/ai instead of training from scratch (faster re-tunes)")
     args = ap.parse_args()
 
     def log(msg):
@@ -202,9 +206,13 @@ def main():
     bal["stage_mult"] = {str(k): v for k, v in bal["stage_mult"].items()}
     t0 = time.time()
     with Pool(len(CLASSES)) as pool:
-        log(f"[1/4] Training {len(CLASSES)} agents x {args.episodes} runs...")
-        pool.map(_train, [(c, args.episodes, bal, False) for c in CLASSES])
-        log(f"      done in {time.time() - t0:.0f}s")
+        have_agents = all(os.path.exists(os.path.join(ASSETS, "ai", f"{c}.npz")) for c in CLASSES)
+        if args.skip_train and have_agents:
+            log("[1/4] Reusing the trained agents in assets/ai (--skip-train)")
+        else:
+            log(f"[1/4] Training {len(CLASSES)} agents x {args.episodes} runs...")
+            pool.map(_train, [(c, args.episodes, bal, False) for c in CLASSES])
+            log(f"      done in {time.time() - t0:.0f}s")
         if args.autotune:
             log("[2/4] Tuning difficulty...")
             bal = autotune(bal, args, pool, log)

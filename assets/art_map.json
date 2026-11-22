@@ -172,5 +172,19 @@
   "toad_venom": "Items/Potion/MilkPot.png",
   "hachimaki": "Items/Other/Stamp.png",
   "mirror_yata": "Ui/Skill Icon/Meteo/Sun.png",
-  "spring_gourd": "Items/Object/Gourd.png"
+  "spring_gourd": "Items/Object/Gourd.png",
+  "bokken": "Items/Weapons/Stick/Sprite.png",
+  "purifying_salt": "Items/Resource/Water.png",
+  "thieves_hook": "Ui/Skill Icon/Items & Weapon/Hook.png",
+  "sacred_sake": "Items/Potion/Medipack.png",
+  "oni_gauntlet": "Ui/Skill Icon/Spell/AttackUpgrade.png",
+  "taiko_drum": "Ui/Skill Icon/Job & Action/Sing.png",
+  "yoroi_doshi": "Items/Weapons/Rapier/Sprite.png",
+  "muramasa": "Items/Weapons/Sword/Sprite.png",
+  "shadow_clone": "Actor/Character/NinjaGray/Faceset.png",
+  "smoke_fan": "Ui/Skill Icon/Meteo/Rain.png",
+  "serpent_hairpin": "Items/Weapons/MagicWand/Sprite.png",
+  "purify_ofuda": "Items/Other/Letter.png",
+  "prayer_wheel": "Items/Object/Hourglass.png",
+  "begging_bowl": "Items/Food/Noodle.png"
 }

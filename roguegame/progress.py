@@ -43,6 +43,8 @@ def data():
         _data.setdefault("asc", {})            # class -> highest unlocked ascension level
         _data.setdefault("story_wins", {})     # class -> number of story wins
         _data.setdefault("deepest", 0)
+        _data.setdefault("seen_items", [])
+        _data.setdefault("seen_enemies", [])
     return _data
 
 
@@ -174,3 +176,32 @@ def lifetime_stats(history_runs, arena_runs):
         arena_runs=len(arena_runs), arena_best=max((r["wins"] for r in arena_runs), default=0),
         bosses=sum(v for k, v in kills.items() if enemy_tier(k) == "boss"),
     )
+
+
+# ---------------------------------------------------------------- compendium (what you've discovered)
+def discover_item(*iids):
+    d = data()
+    new = [i for i in dict.fromkeys(iids) if i and i not in d["seen_items"]]
+    if new:
+        d["seen_items"].extend(new)
+        save()
+
+
+def discover_enemy(eid):
+    d = data()
+    if eid and eid not in d["seen_enemies"]:
+        d["seen_enemies"].append(eid)
+        save()
+
+
+def seen_item(iid):
+    return iid in data()["seen_items"]
+
+
+def seen_enemy(eid):
+    return eid in data()["seen_enemies"]
+
+
+def endless_unlocked():
+    """Endless opens once you've beaten the story (all 3 stages) with any class."""
+    return bool(data()["story_wins"]) or bool(data()["asc"])

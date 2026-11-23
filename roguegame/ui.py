@@ -53,6 +53,13 @@ GLYPH = {"weapon": "weapon", "armor": "shield", "food": "food", "poison": "poiso
          "charm": "charm", "tool": "tool", "scroll": "scroll"}
 
 _fonts = {}
+TEXT_SCALE = 1.0          # "Larger text" setting
+
+
+def set_text_scale(k):
+    global TEXT_SCALE
+    TEXT_SCALE = k
+    _fonts.clear()
 
 # ---------------------------------------------------------------- pixel art (Ninja Adventure pack, CC0)
 ART_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "art")
@@ -91,6 +98,7 @@ WEB = sys.platform == "emscripten"
 def font(size, bold=False, italic=False):
     key = (size, bold, italic)
     if key not in _fonts:
+        size = int(round(size * TEXT_SCALE))
         if WEB:
             # browsers have no system fonts: use pygame's built-in font (scaled to match Segoe UI's size)
             f = pygame.font.Font(None, int(size * 1.3))

@@ -38,7 +38,8 @@ def run_to_dict(run):
         seen_events=run.seen_events, map=run.map, pos=list(run.pos) if run.pos else None,
         battles_won=run.battles_won, rerolls=run.rerolls, techniques=run.techniques, kills=run.kills,
         started=run.started, path=run.path, gold_earned=run.gold_earned, mode=run.mode,
-        asc=run.asc, consumables=run.consumables, flags=run.flags,
+        asc=run.asc, consumables=run.consumables, flags=run.flags, stats=run.stats,
+        arena=getattr(run, "arena", None),
     )
 
 
@@ -47,6 +48,9 @@ def run_from_dict(d):
     run = RunState(d["char_id"], d["seed"], mode=d.get("mode", "story"), asc=d.get("asc", 0))
     run.consumables = d.get("consumables", [])
     run.flags = d.get("flags", {})
+    run.stats = d.get("stats", run.stats)
+    if d.get("arena"):
+        run.arena = d["arena"]
     st = d["rng"]
     run.rng.setstate((st[0], tuple(st[1]), st[2]))
     for k in ("max_hp", "hp", "gold", "stage", "seen_events", "map", "battles_won", "rerolls", "techniques",
@@ -88,3 +92,29 @@ def load_run():
 
 def clear_run():
     storage.delete("run")
+
+
+# ---------------------------------------------------------------- Arena runs (their own slot)
+def save_arena(run):
+    try:
+        return storage.write("arena_run", json.dumps(run_to_dict(run)))
+    except Exception as e:   # noqa: BLE001
+        print("arena save skipped:", repr(e))
+        return False
+
+
+def load_arena():
+    try:
+        text = storage.read("arena_run")
+        if not text:
+            return None
+        d = json.loads(text)
+        if d.get("version") != SAVE_VERSION or not d.get("arena"):
+            return None
+        return run_from_dict(d)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def clear_arena():
+    storage.delete("arena_run")

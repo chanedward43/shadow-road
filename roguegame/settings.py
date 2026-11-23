@@ -3,7 +3,8 @@ import json
 
 from . import storage
 
-DEFAULTS = dict(music=0.45, sfx=0.7, speed=1, colorblind=False, shake=True, hints=True)
+DEFAULTS = dict(music=0.45, sfx=0.7, speed=1, colorblind=False, shake=True, hints=True, muted=False,
+                large_text=False)
 _cur = None
 
 

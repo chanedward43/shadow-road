@@ -58,7 +58,22 @@ python main.py
   the wounded rōnin in stage 2 - an **Omen** node appears on the next stage's map with the payoff.
 - **Risky events**: the Oni's Bargain, the Champion's Grave (a hard fight for a legendary), the Monk of Empty
   Mind (sell a technique), High-Stakes Dice and the Veiled Merchant.
-- While holding an item, a **Rotate** button appears bottom-right (handy on touch screens).
+- While holding an item, a **Rotate** button appears bottom-right (handy on touch screens). On a touch screen, a quick tap picks an item up; press and hold to read its tooltip.
+- **Weapons merge up to level 5** (other items to 3). Levels 4 and 5 add a little less each.
+- **Recipes**: put two ingredients next to each other in your kit; when you leave the bag/shop screen they fuse
+  into a unique item (never sold in shops). Hover an ingredient to see its recipe; matching neighbours glow gold.
+  Katana + Whetstone, Dō Armor + Kasa Hat, Shuriken + Kunai, Fire Bomb + Oil Flask, Iron Fan + Smoke Bomb,
+  Poisoned Tea + Fukiya, Ofuda + Paper Shikigami, Temple Naginata + Kesa Robe, Onigiri + Sake Gourd,
+  Bō Staff + Ofuda, Maneki-neko + Coin Purse.
+- **Compendium** (title screen): every item, enemy and recipe; undiscovered ones are dark silhouettes.
+- **Battles** animate: items bounce when they fire, the attacker lunges, the target shakes, and coloured
+  particles show hits, poison, burn, block and heals. Events are painted scenes with a typewriter reveal.
+- **End screen**: MVP item, damage by item, the final kit, techniques and the run's numbers.
+- **Hotkeys**: Space = skip / continue, 1 / 2 / 4 = battle speed.
+- **Mute**: the speaker button in the top-right corner of every screen. **Settings** also has *Larger text*.
+- **Endless** unlocks after you beat the story once. **Arena runs** are saved: refresh and pick *Resume run*
+  (leaving during a ghost duel counts as a loss). On the website, music streams in when first played, so the
+  game itself loads faster.
 
 ## Development
 | Task | Command |
@@ -83,7 +98,7 @@ Samurai/Sōhei get endless passives (they scaled worst in testing). Match Histor
 ## Arena (online ghost PvP)
 **Arena (online)** on the title screen: shop and arrange your kit each round, then fight the
 *ghost* of another player's kit from the same round of the same game version. Win 10 fights to be
-champion; 5 losses and you're out. Each round is a small random floor, like the adventure map: practice fights and elites (losing one costs nothing - you just get no rewards), shrines, events, a forge, a bounty and a dojo, then a merchant, and the round ends with the ghost duel instead of a boss. Your kit is uploaded as a ghost each round so others fight you.
+champion; 5 losses and you're out. Each round is a random floor of 5 choices, like the adventure map: practice fights and elites (losing one costs nothing - you just get no rewards), shrines, events, a forge, a bounty and a dojo, then a merchant, and the round ends with the ghost duel instead of a boss. Your kit is uploaded as a ghost each round so others fight you.
 When nobody has played a round yet (or you're offline) you face an AI ghost instead.
 
 The website itself stays on GitHub Pages; ghosts and the leaderboard live in a free **Supabase**

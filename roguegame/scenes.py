@@ -9,7 +9,7 @@ from . import ui
 from .ui import W, H, text, text_block, panel, Button
 from .data import (ITEMS, CHARACTERS, STAGES, ENEMIES, TECHNIQUES, REST_HEAL, BUILDS, BALANCE, sell_value,
                    ENDLESS_STAGE_HP, ENDLESS_PASSIVES, BLOOD_MOON_STAGE, CONSUMABLES, MAX_CONSUMABLES,
-                   ASCENSION, MAX_ASCENSION)
+                   ASCENSION, MAX_ASCENSION, recipes_for, recipe_of, RECIPES)
 from . import save, history, arena, online, audio, progress, settings
 from .version import VERSION
 from .run import RunState, fresh_seed
@@ -28,7 +28,7 @@ class Scene:
     def __init__(self, game):
         self.game = game
         self.buttons = []
-        self._map_btn = Button((W - 118, 7, 104, 34), "Map (M)", self.open_map, 16)
+        self._map_btn = Button((W - 162, 7, 104, 34), "Map (M)", self.open_map, 16)   # mute is right of it
 
     def open_map(self):
         if self.game.run is not None:
@@ -82,7 +82,7 @@ def top_bar(s, run, title=""):
         if run.asc:
             text(s, f"A{run.asc}", (r.right + 12, 11), 20, (200, 140, 255), True)
     if title:
-        text(s, title, (W - 130, 11), 20, ui.DIM, True, right=True)
+        text(s, title, (W - 174, 11), 20, ui.DIM, True, right=True)
 
 
 def draw_hearts(s, pos, n, total=None, size=9):
@@ -137,15 +137,17 @@ class TitleScene(Scene):
         super().__init__(game)
         self.t = 0
         self.saved = save.load_run()
-        lx, rx, bw, bh = W // 2 - 290, W // 2 + 10, 280, 54
+        lx, rx, bw, bh = W // 2 - 290, W // 2 + 10, 280, 52
+        ys = [372, 436, 500, 564]
         self.buttons = [
-            Button((lx, 390, bw, bh), "New Journey", lambda: game.change(CharSelectScene(game)), 24),
-            Button((lx, 456, bw, bh), "Continue", self.resume, 24, enabled=self.saved is not None),
-            Button((lx, 522, bw, bh), "Arena (online)", lambda: game.change(ArenaLobbyScene(game)), 24),
-            Button((rx, 390, bw, bh), "Match History", lambda: game.change(MatchHistoryScene(game)), 24),
-            Button((rx, 456, bw, bh), "Achievements", lambda: game.change(AchievementsScene(game)), 24),
-            Button((rx, 522, bw, bh), "Settings", lambda: game.change(SettingsScene(game)), 24),
-            Button((W // 2 - 110, 600, 220, 48), "Quit", game.quit, 20),
+            Button((lx, ys[0], bw, bh), "New Journey", lambda: game.change(CharSelectScene(game)), 24),
+            Button((lx, ys[1], bw, bh), "Continue", self.resume, 24, enabled=self.saved is not None),
+            Button((lx, ys[2], bw, bh), "Arena (online)", lambda: game.change(ArenaLobbyScene(game)), 24),
+            Button((lx, ys[3], bw, bh), "Compendium", lambda: game.change(CompendiumScene(game)), 24),
+            Button((rx, ys[0], bw, bh), "Match History", lambda: game.change(MatchHistoryScene(game)), 24),
+            Button((rx, ys[1], bw, bh), "Achievements", lambda: game.change(AchievementsScene(game)), 24),
+            Button((rx, ys[2], bw, bh), "Settings", lambda: game.change(SettingsScene(game)), 24),
+            Button((rx, ys[3], bw, bh), "Quit", game.quit, 24),
         ]
 
     def resume(self):
@@ -200,6 +202,10 @@ class CharSelectScene(Scene):
         self.asc = max(0, min(top, self.asc + d))
 
     def set_mode(self, mode):
+        if mode == "endless" and not progress.endless_unlocked():
+            self.game.toast("Endless unlocks once you beat all 3 stages of the story.", (230, 130, 130), 3)
+            audio.play("back")
+            return
         self.mode = mode
 
     def start(self):
@@ -231,8 +237,13 @@ class CharSelectScene(Scene):
         if not self.arena_mode:
             for b in self.mode_btns:
                 b.col = (80, 70, 40) if b.label.lower() == self.mode else ui.PANEL2
+            if not progress.endless_unlocked():
+                self.mode_btns[1].label = "Endless (locked)"
+                self.mode_btns[1].col = (35, 33, 42)
             hint = ("3 stages, then the stage-3 villain." if self.mode == "story" else
                     "Beat stage 3, then keep going. Stage 5 brings the Blood Moon.")
+            if not progress.endless_unlocked():
+                hint = "Beat the story (all 3 stages) to unlock Endless."
             text(s, hint, (W - 20, 618), 13, ui.GOLD if self.mode == "endless" else ui.DIM, right=True)
             # ascension picker
             top = progress.asc_unlocked(self.ids[self.sel]) if self.sel is not None else 0
@@ -306,7 +317,9 @@ class MapScene(Scene):
         self.back = back             # set when viewing the map from another screen
         self.arena = getattr(self.run, "arena", None)
         if back is None:
-            if not self.arena:                       # arena runs are never saved over your adventure
+            if self.arena:                           # arena runs have their own save slot
+                save.save_arena(self.run)
+            else:
                 save.save_run(self.run)
             self.buttons = [Button((W - 210, H - 70, 190, 50), "Your Kit", self.open_bag)]
         else:
@@ -319,8 +332,9 @@ class MapScene(Scene):
         self.game.change(InventoryScene(self.game, "manage", on_done=lambda: MapScene(self.game)))
 
     def node_pos(self, r, node):
-        if self.arena:                              # a short floor: spread it across the screen
-            return int(150 + r * 230), int(140 + node["x"] * 450)
+        if self.arena:                              # the arena floor: spread its rows across the screen
+            step = 800 / max(1, len(self.run.map) - 1)
+            return int(110 + r * step), int(140 + node["x"] * 450)
         return int(100 + r * 140), int(130 + node["x"] * 470)
 
     def node_at(self, pos, only_available=True):
@@ -529,6 +543,7 @@ class InventoryScene(Scene):
         self.undo = None                      # last Shift+click sale, undoable for a few seconds
         self.undo_btn = Button((470, 616, 200, 32), "Undo sell", self.undo_sell, 15)
         self.rotate_btn = Button((W - 230, H - 70, 210, 52), "Rotate (R)", self.rotate_held, 20)
+        progress.discover_item(*[o for o in self.offers if o], *[i.id for i in self.run.all_items()])
         self.cons_offers = []
         if mode == "shop" and not getattr(self.run, "arena", None):
             self.cons_offers = self.run.shop_consumables()
@@ -542,6 +557,11 @@ class InventoryScene(Scene):
     def done(self):
         if self.held:
             self.return_held()
+        for a, b, res in self.run.combine_recipes():          # touching recipe pairs fuse on the way out
+            self.game.toast(f"Recipe! {ITEMS[a]['name']} + {ITEMS[b]['name']} = {ITEMS[res]['name']}",
+                            (255, 210, 120), 5)
+            audio.play("levelup")
+            progress.discover_item(res)
         self.game.change(self.on_done())
 
     def reroll_cost(self):
@@ -713,7 +733,7 @@ class InventoryScene(Scene):
         if tgt and self.try_swap(inst, *tgt):
             return
         if other and other.id == inst.id:
-            self.say("Only items of the same level can merge (max level 3).")
+            self.say("Only items of the same level can merge (max level 3, weapons 5).")
         self.return_held()
 
     def try_swap(self, inst, grid, o, gx, gy):
@@ -780,6 +800,9 @@ class InventoryScene(Scene):
                         return True
                 hit = self.grid_at(ev.pos)
                 inst = hit[0].item_at(hit[2], hit[3]) if hit else None
+                if inst and self.game.touch:              # touch: decide tap (pick up) vs long-press (peek)
+                    self.press = (ev.pos, pygame.time.get_ticks())
+                    return True
                 if inst and ctrl:
                     self.quick_move(hit[0], inst)
                     return True
@@ -795,6 +818,12 @@ class InventoryScene(Scene):
                     inst = hit[0].item_at(hit[2], hit[3]) if hit else None
                     if inst:
                         self.rotate_in_place(hit[0], inst)
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1 and getattr(self, "press", None):
+            pos, t0 = self.press
+            self.press = None
+            if pygame.time.get_ticks() - t0 < 400:        # a quick tap picks the item up
+                self.pick_up(pos)
+            return True
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1 and self.held:
             h = self.held
             o = self.bag_o if h["grid"] is self.run.bag else self.stash_o
@@ -854,13 +883,22 @@ class InventoryScene(Scene):
                 in_bag = hit[0] is run.bag
                 hover_tip = (inst.id, eff.get(inst.uid) if in_bag else inst.data, None,
                              None if in_bag else "In travel chest: NOT used in battle.")
-                if inst.level < 3:
+                from .data import max_level
+                if inst.level < max_level(inst.data):
                     hover_tip = hover_tip[:3] + ((hover_tip[3] + " " if hover_tip[3] else "")
                                                  + "Drop an identical copy on it to level it up.",)
                 self.highlight[inst.uid] = ui.TEXT
                 if in_bag and inst.data.get("aura"):
                     for nb in run.bag.neighbors(inst):
                         self.highlight[nb.uid] = ui.GREEN
+                rec = recipes_for(inst.id)
+                if rec:
+                    lines = "  ".join(f"Recipe: next to {ITEMS[p]['name']} = {ITEMS[r]['name']}." for p, r in rec)
+                    hover_tip = hover_tip[:3] + (((hover_tip[3] + " ") if hover_tip[3] else "") + lines,)
+                    if in_bag:
+                        for nb in run.bag.neighbors(inst):
+                            if any(nb.id == p for p, _ in rec):
+                                self.highlight[nb.uid] = ui.GOLD
 
         if self.offers:
             head = {"shop": "For sale - click to buy", "reward": "Choose ONE - click to take"}.get(self.mode, "")
@@ -1134,11 +1172,17 @@ class BattleScene(Scene):
         self.initial = copy.deepcopy(self.battle)        # replays restart from this exact moment
         self.pf, self.ef = self.battle.f
         self.build_enemy_layout()
+        if enemy_id:
+            progress.discover_enemy(enemy_id)
+        progress.discover_item(*[ci.st["id"] for ci in self.ef.items if not ITEMS[ci.st["id"]]["enemy"]])
         self.status_hits = []
         self.eff_stats = effective_stats(run.bag, run.char_id, run.techniques)
         self.show_summary = True
         self.replays = 0
         self.real_t = 0.0                  # wall-clock seconds watched (fight time / speed)
+        self.lunge = [0.0, 0.0]            # attacker portrait lunges toward the foe
+        self.hurt = [0.0, 0.0]             # hit portrait shakes and flashes red
+        self.particles = []
         self.speed = settings.get()["speed"]
         self.hp_before = run.hp
         hint(game, "battle", "Battles play themselves. Teal bar = Stamina: weapons wait when it runs out. "
@@ -1167,6 +1211,21 @@ class BattleScene(Scene):
 
     def set_speed(self, sp):
         self.speed = sp
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN:
+            if ev.key == pygame.K_SPACE:
+                if self.finished:
+                    self.cont()
+                else:
+                    self.skip()
+                return True
+            sp = {pygame.K_1: 1, pygame.K_2: 2, pygame.K_4: 4, pygame.K_KP1: 1, pygame.K_KP2: 2,
+                  pygame.K_KP4: 4}.get(ev.key)
+            if sp:
+                self.set_speed(sp)
+                return True
+        return super().handle(ev)
 
     def build_enemy_layout(self):
         """Enemies have no grid of their own: lay their items out in a small kit so you can see it."""
@@ -1217,6 +1276,7 @@ class BattleScene(Scene):
         if self.on_result is not None:
             self.on_result(self.battle.winner == 0)
             return
+        run.record_battle(self.pf.items)
         if getattr(run, "arena", None):              # arena floor fight: practice, full heal after
             run.hp = run.max_hp
             run.after_battle(self.battle.winner == 0, self.kind)
@@ -1304,6 +1364,42 @@ class BattleScene(Scene):
                 audio.play(name, 0.35 if k in ("poison", "burn") else 0.55, gap=0.25 if k in ("poison", "burn")
                            else 0.08)
 
+    def portrait_xy(self, side):
+        r = self.panels[side]
+        return r.x + 90, r.y + 100
+
+    def burst(self, side, col, n=10, rise=False, spread=60):
+        x, y = self.portrait_xy(side)
+        for _ in range(n):
+            ang = random.uniform(0, 6.283)
+            sp = random.uniform(40, 140)
+            self.particles.append(dict(
+                x=x + random.uniform(-25, 25), y=y + random.uniform(-25, 25),
+                vx=0 if rise else math.cos(ang) * sp, vy=-random.uniform(30, 80) if rise else math.sin(ang) * sp,
+                life=random.uniform(0.35, 0.7), col=col, r=random.randint(2, 5)))
+
+    def fx(self, k, e, side):
+        """Little animations: lunges, shakes and coloured particles for what just happened."""
+        if k == "hit":
+            self.lunge[1 - side] = 0.2
+            self.hurt[side] = 0.22
+            self.burst(side, (255, 230, 200) if e["crit"] else (230, 80, 70), 14 if e["crit"] else 8)
+        elif k in ("counter", "summon", "hex", "kiburst", "ambush"):
+            self.hurt[side] = 0.18
+            self.burst(side, (255, 170, 90), 10)
+        elif k == "poison":
+            self.burst(side, ui.POISON, 5, rise=True)
+        elif k == "burn":
+            self.burst(side, ui.BURN, 6, rise=True)
+        elif k == "block":
+            self.burst(side, ui.BLUE, 7)
+        elif k == "heal":
+            self.burst(side, ui.GREEN, 7, rise=True)
+        elif k == "evade":
+            self.burst(side, (200, 200, 255), 6)
+        elif k == "phase":
+            self.burst(side, ui.GOLD, 30)
+
     def float_text(self, side, s, col, size=22):
         x = self.panels[side].x + 330 + random.randint(-110, 110)
         y = self.panels[side].y + 200 + random.randint(-15, 15)
@@ -1321,6 +1417,7 @@ class BattleScene(Scene):
                                                  "kiburst", "summon"):
                 continue                                # fully absorbed by Block: no "-0" popups
             self.sound(k, e, side)
+            self.fx(k, e, side)
             if k == "hit":
                 self.float_text(side, f"{'CRIT ' if e['crit'] else ''}-{a}", ui.RED, 30 if e["crit"] else 22)
             elif k == "poison":
@@ -1362,6 +1459,16 @@ class BattleScene(Scene):
             f["life"] -= dt
             f["y"] -= 40 * dt
         self.floats = [f for f in self.floats if f["life"] > 0]
+        for side in (0, 1):
+            self.lunge[side] = max(0.0, self.lunge[side] - dt)
+            self.hurt[side] = max(0.0, self.hurt[side] - dt)
+        for pt in self.particles:
+            pt["life"] -= dt
+            pt["x"] += pt["vx"] * dt
+            pt["y"] += pt["vy"] * dt
+            pt["vx"] *= 0.92
+            pt["vy"] *= 0.92
+        self.particles = [pt for pt in self.particles if pt["life"] > 0][-160:]
         if self.battle.done and not self.finished:
             audio.play("win" if self.battle.winner == 0 else "lose")
             self.finished = True
@@ -1373,8 +1480,18 @@ class BattleScene(Scene):
     def draw_fighter(self, s, side, f, mouse):
         r = self.panels[side]
         panel(s, r, ui.PANEL, (120, 40, 40) if f.stun_t > 0 else ui.LINE, width=4 if f.stun_t > 0 else 2)
-        ui.portrait(s, (r.x + 90, r.y + 100), 62, f.color, f.glyph, f.portrait,
+        px, py = r.x + 90, r.y + 100
+        if self.lunge[side] > 0:                       # lunge toward the other side
+            px += int((1 if side == 0 else -1) * 22 * math.sin(math.pi * (1 - self.lunge[side] / 0.2)))
+        if self.hurt[side] > 0:
+            px += random.randint(-4, 4)
+            py += random.randint(-3, 3)
+        ui.portrait(s, (px, py), 62, f.color, f.glyph, f.portrait,
                     key=self.run.char_id if side == 0 else (self.ghost.char_id if self.ghost else self.enemy_id))
+        if self.hurt[side] > 0:
+            red = pygame.Surface((132, 132), pygame.SRCALPHA)
+            pygame.draw.circle(red, (220, 40, 40, int(120 * self.hurt[side] / 0.22)), (66, 66), 64)
+            s.blit(red, (px - 66, py - 66))
         x = r.x + 180
         text(s, f.name, (x, r.y + 20), 22 if len(f.name) < 24 else 17, ui.TEXT, True)
         ui.bar(s, (x, r.y + 60, 400, 26), f.hp / max(1, f.max_hp), ui.RED)
@@ -1456,7 +1573,8 @@ class BattleScene(Scene):
         for inst in grid.items:
             ci = find(inst)
             px, py = ox + inst.x * KCELL, oy + inst.y * KCELL
-            ui.draw_item(s, inst.id, inst.shape, px, py, KCELL, level=inst.level, rot=inst.rot)
+            bounce = int(7 * math.sin(math.pi * min(1.0, ci.flash / 0.25))) if ci is not None and ci.flash > 0 else 0
+            ui.draw_item(s, inst.id, inst.shape, px, py - bounce, KCELL, level=inst.level, rot=inst.rot)
             xs = [c[0] for c in inst.shape]
             ys = [c[1] for c in inst.shape]
             box = pygame.Rect(px + min(xs) * KCELL + 3, py + min(ys) * KCELL + 3,
@@ -1606,6 +1724,11 @@ class BattleScene(Scene):
         tip_a = self.draw_fighter(s, 0, self.pf, mouse)
         tip_b = self.draw_fighter(s, 1, self.ef, mouse)
         tip = tip_a or tip_b
+        for pt in self.particles:
+            a = max(0, min(255, int(255 * pt["life"] / 0.5)))
+            dot = pygame.Surface((pt["r"] * 2, pt["r"] * 2), pygame.SRCALPHA)
+            pygame.draw.circle(dot, pt["col"] + (a,), (pt["r"], pt["r"]), pt["r"])
+            s.blit(dot, (pt["x"] - pt["r"], pt["y"] - pt["r"]))
         for f in self.floats:
             img = ui.font(f["size"], True).render(f["s"], True, f["col"])
             img.set_alpha(max(0, min(255, int(255 * f["life"]))))
@@ -1691,6 +1814,12 @@ class StageScene(Scene):
         self.buttons = [Button((W // 2 - 120, 560, 240, 56), "Continue",
                                lambda: game.change(MapScene(game)), 22)]
 
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+            self.buttons[0].cb()
+            return True
+        return super().handle(ev)
+
     def update(self, dt):
         self.t += dt
 
@@ -1741,33 +1870,126 @@ class EndScene(Scene):
         audio.music(None)
         audio.play("win" if won else "lose")
         announce(game, progress.on_run_end(self.run, won or self.run.stage >= 4))
-        self.buttons_extra = Button((W // 2 - 120, 570, 240, 50), "Match History",
-                                    lambda: game.change(MatchHistoryScene(game)), 20)
-        self.buttons = [Button((W // 2 - 120, 500, 240, 56), "Main menu",
-                               lambda: game.change(TitleScene(game)), 22), self.buttons_extra]
+        self.buttons = [Button((W // 2 - 270, 640, 250, 54), "Main menu",
+                               lambda: game.change(TitleScene(game)), 22),
+                        Button((W // 2 + 20, 640, 250, 54), "Match History",
+                               lambda: game.change(MatchHistoryScene(game)), 22)]
+        self.t = 0.0
+
+    def update(self, dt):
+        self.t += dt
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+            self.game.change(TitleScene(self.game))
+            return True
+        return super().handle(ev)
 
     def draw(self, s):
         s.fill(ui.BG)
+        run = self.run
+        ch = CHARACTERS[run.char_id]
         if self.won:
-            text(s, "VICTORY", (W // 2, 230), 90, ui.GOLD, True, center=True)
-            text(s, "Lord Ashura falls. Dawn returns to the land.", (W // 2, 320), 22, ui.TEXT, center=True)
-        elif self.run.mode == "endless":
-            text(s, "THE ROAD ENDS", (W // 2, 230), 80, ui.RED, True, center=True)
-            text(s, f"Endless: you reached stage {self.run.stage} - {STAGES[self.run.stage]['name']}.",
-                 (W // 2, 320), 22, ui.GOLD if self.run.stage >= 4 else ui.DIM, center=True)
+            draw_petals(s, self.t, 30)
+            villain = ENEMIES[run.boss_of.get(3, "ashura")]["name"].split(",")[0]
+            title, sub, col = "VICTORY", f"{villain} falls. Dawn returns to the land.", ui.GOLD
+        elif run.mode == "endless":
+            title, sub = "THE ROAD ENDS", f"Endless: you reached stage {run.stage} - {STAGES[run.stage]['name']}."
+            col = ui.RED
         else:
-            text(s, "FALLEN", (W // 2, 230), 90, ui.RED, True, center=True)
-            text(s, "Your journey ends here. Another will take up the blade.", (W // 2, 320), 22, ui.DIM,
-                 center=True)
-        text(s, f"{CHARACTERS[self.run.char_id]['name']}  -  reached stage {self.run.stage}  -  "
-                f"{self.run.battles_won} battles won", (W // 2, 380), 18, ui.DIM, center=True)
-        if not self.won and self.run.killed_by in ENEMIES:
-            text(s, f"Slain by {ENEMIES[self.run.killed_by]['name']}", (W // 2, 410), 18, (230, 130, 130),
-                 True, center=True)
+            title, sub, col = "FALLEN", "Your journey ends here. Another will take up the blade.", ui.RED
+        text(s, title, (W // 2, 62), 64, col, True, center=True)
+        text(s, sub, (W // 2, 112), 19, ui.TEXT if self.won else ui.DIM, center=True)
+
+        # left: the run in numbers
+        lp = pygame.Rect(30, 148, 400, 476)
+        panel(s, lp)
+        ui.portrait(s, (lp.x + 52, lp.y + 52), 34, ch["color"], ch["glyph"], ch["portrait"], key=run.char_id)
+        text(s, ch["name"], (lp.x + 100, lp.y + 26), 24, ch["color"], True)
+        mode = ("Endless" if run.mode == "endless" else "Story") + (f"  -  Ascension {run.asc}" if run.asc else "")
+        text(s, mode, (lp.x + 100, lp.y + 56), 15, (200, 140, 255) if run.asc else ui.DIM, True)
+        from .data import enemy_tier
+        tiers = [enemy_tier(e) for e in run.kills]
+        rows = [("Reached", f"stage {run.stage}" + (f", floor {run.path[-1]['row'] + 1}" if run.path else "")),
+                ("Battles won", run.battles_won), ("Elites defeated", tiers.count("elite")),
+                ("Villains defeated", tiers.count("boss")), ("Damage dealt", run.stats.get("dmg", 0)),
+                (f"{CUR} earned", run.gold_earned), ("Max HP", run.max_hp),
+                ("Time", history.fmt_duration(self.record["duration"]) if self.record else "-")]
+        y = lp.y + 110
+        for label, val in rows:
+            text(s, label, (lp.x + 24, y), 17, ui.DIM)
+            text(s, str(val), (lp.right - 24, y), 17, ui.TEXT, True, right=True)
+            y += 32
+        if not self.won and run.killed_by in ENEMIES:
+            y += 6
+            text(s, "Slain by", (lp.x + 24, y), 15, ui.DIM, True)
+            ui.portrait(s, (lp.x + 52, y + 50), 26, (150, 60, 60), "?", "enemy", key=run.killed_by)
+            text_block(s, ENEMIES[run.killed_by]["name"], (lp.x + 90, y + 34), 280, 17, (240, 140, 140), bold=True)
+
+        # right top: best item + techniques
+        rp = pygame.Rect(450, 148, 800, 200)
+        panel(s, rp)
+        best = run.best_item()
+        text(s, "MVP ITEM", (rp.x + 20, rp.y + 14), 15, ui.GOLD, True)
+        if best:
+            iid, dmg = best
+            pic = ui.art(iid, 84)
+            box = pygame.Rect(rp.x + 20, rp.y + 42, 110, 110)
+            panel(s, box, ui.PANEL2, ui.RARITY_COL[ITEMS[iid]["rarity"]])
+            if pic:
+                s.blit(pic, pic.get_rect(center=box.center))
+            text(s, ITEMS[iid]["name"], (box.right + 16, rp.y + 52), 22, ui.TEXT, True)
+            share = int(100 * dmg / max(1, run.stats.get("dmg", 0)))
+            text(s, f"{dmg} damage  -  {share}% of everything you dealt", (box.right + 16, rp.y + 84), 16, ui.GOLD)
+        else:
+            text(s, "No damage dealt this run.", (rp.x + 20, rp.y + 60), 16, ui.DIM)
+        tx = rp.x + 520
+        text(s, "TECHNIQUES", (tx, rp.y + 14), 15, ui.GREEN, True)
+        ty = rp.y + 40
+        for tid in run.techniques[:6]:
+            text(s, TECHNIQUES[tid]["name"], (tx, ty), 15, ui.TEXT, True)
+            ty += 24
+        if not run.techniques:
+            text(s, "none", (tx, ty), 15, ui.DIM)
+
+        # right bottom: the final kit
+        kp = pygame.Rect(450, 362, 800, 262)
+        panel(s, kp)
+        text(s, "FINAL KIT", (kp.x + 20, kp.y + 12), 15, ui.DIM, True)
+        cell = 42
+        ox, oy = kp.x + 20, kp.y + 38
+        g = run.bag
+        mouse = pygame.mouse.get_pos()
+        tip = None
+        for yy in range(g.h):
+            for xx in range(g.w):
+                pygame.draw.rect(s, (40, 36, 30), (ox + xx * cell, oy + yy * cell, cell, cell))
+                pygame.draw.rect(s, (66, 58, 48), (ox + xx * cell, oy + yy * cell, cell, cell), 1)
+        for inst in g.items:
+            px, py = ox + inst.x * cell, oy + inst.y * cell
+            ui.draw_item(s, inst.id, inst.shape, px, py, cell, level=inst.level, rot=inst.rot)
+            for cx, cy in inst.shape:
+                if pygame.Rect(px + cx * cell, py + cy * cell, cell, cell).collidepoint(mouse):
+                    tip = inst
+        # damage by item, top 5
+        lx = ox + g.w * cell + 30
+        text(s, "DAMAGE BY ITEM", (lx, kp.y + 12), 15, ui.DIM, True)
+        top5 = sorted((run.stats.get("items") or {}).items(), key=lambda kv: -kv[1])[:5]
+        most = top5[0][1] if top5 else 1
+        for k, (iid, dmg) in enumerate(top5):
+            y = kp.y + 42 + k * 40
+            pic = ui.art(iid, 26)
+            if pic:
+                s.blit(pic, pic.get_rect(center=(lx + 14, y + 13)))
+            text(s, ITEMS[iid]["name"][:22], (lx + 34, y), 14, ui.TEXT, True)
+            ui.bar(s, (lx + 34, y + 20, 300, 8), dmg / most, ui.GOLD)
+            text(s, str(dmg), (lx + 344, y + 14), 13, ui.DIM)
         if self.record:
-            text(s, f"{history.fmt_duration(self.record['duration'])}  -  {self.record['gold']} {CUR} earned  -  "
-                    f"saved to your match history", (W // 2, 440), 15, ui.DIM, center=True)
+            text(s, "Saved to your match history.", (W // 2, 628), 13, ui.DIM, center=True)
         self.draw_buttons(s)
+        if tip is not None:
+            rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 220), 330, 100)
+            ui.draw_tooltip(s, tip.id, rr, eff=tip.data, fit=True)
 
 
 # =================================================================== ? events
@@ -1783,14 +2005,68 @@ class EventScene(Scene):
         self.ev = ev
         self.after = after or (lambda: MapScene(game))       # the screen to go to when it's over
         self.result = None
+        self.t = 0.0                                          # typewriter clock
+        self.scene_img = self.paint_scene()
         self.make_option_buttons()
+
+    SCENE = pygame.Rect(W // 2 - 470, 60, 940, 250)
+
+    def paint_scene(self):
+        """A small painted backdrop for the event: sky, moon, layered mountains, ground (seeded per event)."""
+        r = self.SCENE
+        img = pygame.Surface(r.size)
+        rng = random.Random(self.ev["id"])
+        stage = self.run.stage if self.run else 1
+        top, bottom = {1: ((60, 40, 70), (200, 120, 90)), 2: ((30, 50, 60), (110, 150, 140)),
+                       3: ((40, 16, 24), (150, 50, 50))}.get(stage, ((26, 16, 40), (120, 40, 70)))
+        if self.run and self.run.blood_moon_now:
+            top, bottom = (30, 6, 10), (130, 20, 26)
+        for y in range(r.height):                             # vertical sky gradient
+            k = y / r.height
+            pygame.draw.line(img, tuple(int(top[i] + (bottom[i] - top[i]) * k) for i in range(3)), (0, y),
+                             (r.width, y))
+        moon = (rng.randint(80, r.width - 80), rng.randint(40, 90))
+        pygame.draw.circle(img, (240, 220, 180) if stage < 3 else (230, 120, 110), moon, 34)
+        for layer, (col, base, amp) in enumerate((((40, 34, 52), 150, 70), ((28, 24, 38), 185, 50),
+                                                   ((18, 16, 26), 215, 30))):
+            pts = [(0, r.height)]
+            x = 0
+            while x <= r.width:
+                pts.append((x, base - rng.randint(0, amp)))
+                x += rng.randint(50, 120)
+            pts += [(r.width, base - rng.randint(0, amp)), (r.width, r.height)]
+            pygame.draw.polygon(img, col, pts)
+        if rng.random() < 0.6:                                # a torii gate on the hill
+            gx = rng.choice((140, r.width - 140))
+            c = (120, 30, 30)
+            pygame.draw.rect(img, c, (gx - 40, 150, 8, 70))
+            pygame.draw.rect(img, c, (gx + 32, 150, 8, 70))
+            pygame.draw.rect(img, c, (gx - 54, 140, 108, 9))
+            pygame.draw.rect(img, c, (gx - 46, 158, 92, 6))
+        pygame.draw.rect(img, (14, 12, 20), (0, r.height - 18, r.width, 18))
+        return img
 
     def make_option_buttons(self):
         self.buttons = []
-        for k, (i, opt, ok) in enumerate(options_for(self.run, self.ev)):
-            b = Button((W // 2 - 330, 430 + k * 62, 660, 52), opt["label"], lambda i=i: self.choose(i), 18,
+        opts = options_for(self.run, self.ev)
+        for k, (i, opt, ok) in enumerate(opts):
+            b = Button((W // 2 - 340, 448 + k * 58, 680, 50), opt["label"], lambda i=i: self.choose(i), 18,
                        enabled=ok)
             self.buttons.append(b)
+
+    def update(self, dt):
+        self.t += dt
+
+    def handle(self, ev):
+        body = self.result["text"] if self.result else self.ev["text"]
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.t * 70 < len(body) \
+                and not any(b.rect.collidepoint(ev.pos) for b in self.buttons):
+            self.t = 999                                      # click: show all the text at once
+            return True
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE and self.result and len(self.buttons) == 1:
+            self.buttons[0].cb()
+            return True
+        return super().handle(ev)
 
     def choose(self, i):
         g, run = self.game, self.run
@@ -1810,19 +2086,26 @@ class EventScene(Scene):
         else:
             nxt = lambda: g.change(after())
             label = "Continue"
-        self.buttons = [Button((W // 2 - 140, 560, 280, 56), label, nxt, 22)]
+        self.buttons = [Button((W // 2 - 140, 580, 280, 56), label, nxt, 22)]
+        self.t = 0.0
 
     def draw(self, s):
         s.fill(ui.BG)
-        top_bar(s, self.run, "Mysterious encounter")
-        panel(s, (W // 2 - 360, 80, 720, 330))
-        pic = ui.art(self.ev.get("art", ""), 96)
-        if pic:
-            pygame.draw.circle(s, (40, 34, 52), (W // 2, 160), 62)
-            s.blit(pic, pic.get_rect(center=(W // 2, 160)))
-        text(s, self.ev["title"], (W // 2, 250), 32, ui.GOLD, True, center=True)
+        top_bar(s, self.run, "Encounter")
+        r = self.SCENE
+        s.blit(self.scene_img, r.topleft)
+        pygame.draw.rect(s, ui.LINE, r, 2, border_radius=4)
+        pic = ui.art(self.ev.get("art", ""), 150)
+        if pic:                                               # the event's character stands in the scene
+            bob = int(3 * math.sin(self.t * 2.5))
+            shadow = pygame.Surface((150, 22), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow, (0, 0, 0, 110), shadow.get_rect())
+            s.blit(shadow, (r.centerx - 75, r.bottom - 34))
+            s.blit(pic, pic.get_rect(midbottom=(r.centerx, r.bottom - 18 + bob)))
+        text(s, self.ev["title"], (W // 2, 340), 32, ui.GOLD, True, center=True)
         body = self.result["text"] if self.result else self.ev["text"]
-        text_block(s, body, (W // 2 - 320, 285), 640, 18, ui.TEXT if self.result else ui.DIM)
+        shown = body[:int(self.t * 70)]                       # typewriter
+        text_block(s, shown, (W // 2 - 380, 368), 760, 18, ui.TEXT if self.result else (200, 194, 210))
         self.draw_buttons(s)
 
 
@@ -2192,12 +2475,32 @@ class ArenaLobbyScene(Scene):
         self.name_buf = ""
         self.board_req = online.top_scores(VERSION) if online.enabled() else None
         self.board = None
+        self.saved = save.load_arena()
         self.buttons = [
-            Button((W // 2 - 150, 600, 300, 60), "Enter the Arena",
+            Button((W // 2 - 150, 600, 300, 60), "New Arena run",
                    lambda: game.change(CharSelectScene(game, arena_mode=True)), 26),
+            Button((W // 2 + 170, 606, 240, 50), "Resume run", self.resume, 20, enabled=self.saved is not None),
             Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20),
-            Button((420, 236, 150, 36), "Change name", self.start_edit, 16),
         ]
+        self.name_btn = Button((420, 236, 150, 36), "Change name", self.start_edit, 16)
+        self.buttons.append(self.name_btn)
+
+    def resume(self):
+        g, run = self.game, self.saved
+        if run is None:
+            return
+        g.run = run
+        a = run.arena
+        if a.get("pending_duel"):                     # left during a duel: it counts as a loss
+            a["pending_duel"] = False
+            state = arena.apply_result(run, False, dict(name="(abandoned duel)", cls=run.char_id, bot=True))
+            save.save_arena(run)
+            g.toast("You left during a duel - it counts as a loss.", (230, 130, 130), 4)
+            g.change(ArenaResultScene(g, False, dict(name="(abandoned duel)"), state))
+        elif arena.finished(run):
+            g.change(ArenaEndScene(g))
+        else:
+            g.change(MapScene(g))
 
     def start_edit(self):
         if self.editing:                 # the button doubles as "save"
@@ -2261,8 +2564,8 @@ class ArenaLobbyScene(Scene):
         shown = self.name_buf + ("_" if (pygame.time.get_ticks() // 400) % 2 else "") if self.editing \
             else self.profile["name"]
         text(s, shown, (box.x + 10, box.y + 8), 19, ui.TEXT, True)
-        self.buttons[2].rect.topleft = (box.right + 12, box.y)
-        self.buttons[2].label = "Save name" if self.editing else "Change name"
+        self.name_btn.rect.topleft = (box.right + 12, box.y)
+        self.name_btn.label = "Save name" if self.editing else "Change name"
         if self.editing:
             text(s, "Type a name, then Enter (Esc cancels)", (box.x, box.bottom + 4), 13, ui.DIM)
         y += 64
@@ -2318,6 +2621,8 @@ class ArenaMatchScene(Scene):
         self.opp = None
         self.t = 0.0
         self.rng = random.Random(run.rng.randrange(1 << 30))
+        run.arena["pending_duel"] = True              # quitting during the duel counts as a loss
+        save.save_arena(run)
         if online.enabled():
             online.upload_ghost(arena.ghost_record(run, self.profile))     # fire and forget
             self.req = online.find_ghosts(self.rnd, VERSION, self.profile["id"])
@@ -2346,7 +2651,9 @@ class ArenaMatchScene(Scene):
         g, run, opp = self.game, self.run, self.opp
 
         def result(won):
+            run.arena["pending_duel"] = False
             state = arena.apply_result(run, won, opp)
+            save.save_arena(run)
             g.change(ArenaResultScene(g, won, opp, state))
         g.change(BattleScene(g, None, "pvp", ghost=self.opp_run, ghost_rec=opp, on_result=result))
 
@@ -2410,6 +2717,7 @@ class ArenaEndScene(Scene):
         self.rec = arena.score_record(run, self.profile)
         self.new_best = online.record_best(self.rec)
         history.record_arena(run)
+        save.clear_arena()
         announce(game, progress.on_arena_end(run))
         self.req = online.submit_score(self.rec) if online.enabled() else None
         self.buttons = [Button((W // 2 - 420, 600, 260, 56), "Arena lobby",
@@ -2453,7 +2761,8 @@ class ArenaEndScene(Scene):
 class SettingsScene(Scene):
     music = "title"
     ROWS = [("music", "Music volume"), ("sfx", "Sound effects"), ("speed", "Default battle speed"),
-            ("shake", "Screen shake"), ("colorblind", "Colour-blind palette"), ("hints", "First-time tips")]
+            ("shake", "Screen shake"), ("colorblind", "Colour-blind palette"), ("large_text", "Larger text"),
+            ("hints", "First-time tips")]
 
     def __init__(self, game):
         super().__init__(game)
@@ -2461,7 +2770,7 @@ class SettingsScene(Scene):
                         Button((W // 2 + 150, 548, 200, 40), "Show tips again", self.reset_hints, 16)]
         self.row_btns = []
         for i, (key, _) in enumerate(self.ROWS):
-            y = 160 + i * 64
+            y = 132 + i * 56
             if key in ("music", "sfx"):
                 self.row_btns += [Button((W // 2 + 40, y, 50, 44), "-", lambda k=key: self.vol(k, -0.1), 22),
                                   Button((W // 2 + 240, y, 50, 44), "+", lambda k=key: self.vol(k, 0.1), 22)]
@@ -2482,6 +2791,8 @@ class SettingsScene(Scene):
         settings.set(key, not settings.get()[key])
         if key == "colorblind":
             ui.apply_palette(settings.get()["colorblind"])
+        if key == "large_text":
+            ui.set_text_scale(1.12 if settings.get()["large_text"] else 1.0)
 
     def reset_hints(self):
         progress.data()["hints"] = []
@@ -2496,11 +2807,11 @@ class SettingsScene(Scene):
 
     def draw(self, s):
         s.fill(ui.BG)
-        text(s, "Settings", (W // 2, 70), 44, ui.GOLD, True, center=True)
+        text(s, "Settings", (W // 2, 62), 40, ui.GOLD, True, center=True)
         st = settings.get()
-        panel(s, pygame.Rect(W // 2 - 360, 136, 720, 6 * 64 + 20))
+        panel(s, pygame.Rect(W // 2 - 360, 116, 720, len(self.ROWS) * 56 + 20))
         for i, (key, label) in enumerate(self.ROWS):
-            y = 160 + i * 64
+            y = 132 + i * 56
             text(s, label, (W // 2 - 330, y + 10), 20, ui.TEXT, True)
             if key in ("music", "sfx"):
                 ui.bar(s, (W // 2 + 100, y + 14, 130, 16), st[key], ui.GOLD)
@@ -2596,4 +2907,187 @@ class AchievementsScene(Scene):
             text(s, f"x{c}", (px + 20, y + 36), 12, ui.DIM, center=True)
         if not st["favourite"]:
             text(s, "Finish a run to see them.", (x, y), 14, ui.DIM)
+        self.draw_buttons(s)
+
+
+# =================================================================== compendium
+class CompendiumScene(Scene):
+    """Every item, enemy and recipe. Things you haven't met yet are dark silhouettes."""
+    music = "title"
+    TABS = ("Items", "Enemies", "Recipes")
+
+    def __init__(self, game):
+        super().__init__(game)
+        self.tab = "Items"
+        self.filter = None                  # class id / "shared" / None
+        self.tab_btns = [Button((W - 520 + i * 168, 16, 160, 38), t, lambda t=t: self.set_tab(t), 17)
+                         for i, t in enumerate(self.TABS)]
+        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)] + \
+            self.tab_btns
+        self.items = sorted((i for i, d in ITEMS.items() if not d["enemy"]),
+                            key=lambda i: (list(CHARACTERS).index(ITEMS[i]["cls"]) if ITEMS[i]["cls"] else -1,
+                                           ["common", "rare", "epic", "legendary"].index(ITEMS[i]["rarity"]),
+                                           ITEMS[i]["name"]))
+        self.enemies = [e for e in ENEMIES]
+        self.chips = []
+        self.set_tab("Items")
+
+    def set_tab(self, t):
+        self.tab = t
+        self.scroll = 0
+        for b in self.tab_btns:
+            b.col = (80, 70, 40) if b.label == t else ui.PANEL2
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.game.change(TitleScene(self.game))
+            return True
+        if ev.type == pygame.MOUSEWHEEL:
+            self.scroll = max(0, self.scroll - ev.y)
+            return True
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            for r, key in self.chips:
+                if r.collidepoint(ev.pos):
+                    self.filter = None if self.filter == key else key
+                    self.scroll = 0
+                    return True
+        return super().handle(ev)
+
+    @staticmethod
+    def silhouette(pic):
+        dark = pic.copy()
+        dark.fill((38, 34, 48, 255), special_flags=pygame.BLEND_RGBA_MIN)
+        return dark
+
+    def shown_items(self):
+        f = self.filter
+        return [i for i in self.items if f is None or (ITEMS[i]["cls"] or "shared") == f]
+
+    def draw_items(self, s, mouse):
+        cell, cols, top = 56, 20, 130
+        items = self.shown_items()
+        rows_visible = (630 - top) // cell
+        self.scroll = min(self.scroll, max(0, (len(items) + cols - 1) // cols - rows_visible))
+        tip = None
+        for k, iid in enumerate(items[self.scroll * cols:(self.scroll + rows_visible) * cols]):
+            x, y = 24 + (k % cols) * cell, top + (k // cols) * cell
+            r = pygame.Rect(x, y, cell - 6, cell - 6)
+            seen = progress.seen_item(iid)
+            d = ITEMS[iid]
+            panel(s, r, ui.PANEL if seen else (22, 20, 28), ui.RARITY_COL[d["rarity"]] if seen else ui.LINE, radius=6)
+            pic = ui.art(iid, 38)
+            if pic:
+                s.blit(pic if seen else self.silhouette(pic), pic.get_rect(center=r.center))
+            if d.get("recipe"):
+                pygame.draw.circle(s, (255, 210, 120), (r.right - 6, r.y + 6), 4)
+            if r.collidepoint(mouse):
+                tip = iid if seen else "?"
+        if tip == "?":
+            w = 230
+            rr = pygame.Rect(min(mouse[0] + 14, W - w - 4), mouse[1] + 14, w, 30)
+            panel(s, rr, ui.PANEL2, ui.LINE, radius=5)
+            text(s, "Not discovered yet", (rr.x + 10, rr.y + 6), 15, ui.DIM, True)
+        elif tip:
+            extra = None
+            rec = recipe_of(tip)
+            if rec:
+                extra = f"Recipe: {ITEMS[rec[0]]['name']} next to {ITEMS[rec[1]]['name']}."
+            elif ITEMS[tip].get("loot"):
+                extra = "Only dropped by an enemy."
+            rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 200), 330, 100)
+            ui.draw_tooltip(s, tip, rr, extra=extra, fit=True)
+        n = sum(1 for i in self.items if progress.seen_item(i))
+        return f"{n} / {len(self.items)} items discovered"
+
+    def draw_enemies(self, s, mouse):
+        cw, chh, cols, top = 152, 112, 8, 130
+        tiers = {"mob": 0, "elite": 1, "boss": 2}
+        from .data import enemy_tier
+        es = sorted(self.enemies, key=lambda e: (tiers[enemy_tier(e)], ENEMIES[e]["hp"]))
+        rows_visible = (640 - top) // chh
+        self.scroll = min(self.scroll, max(0, (len(es) + cols - 1) // cols - rows_visible))
+        kills = progress.data()["kills"]
+        hov = None
+        for k, eid in enumerate(es[self.scroll * cols:(self.scroll + rows_visible) * cols]):
+            x, y = 24 + (k % cols) * (cw + 6), top + (k // cols) * chh
+            r = pygame.Rect(x, y, cw, chh - 8)
+            seen = progress.seen_enemy(eid)
+            tier = enemy_tier(eid)
+            border = {"mob": ui.LINE, "elite": (200, 60, 160), "boss": (230, 50, 50)}[tier]
+            panel(s, r, ui.PANEL if seen else (22, 20, 28), border if seen else ui.LINE, radius=6)
+            pic = ui.art(eid, 56)
+            if pic:
+                s.blit(pic if seen else self.silhouette(pic), pic.get_rect(center=(r.centerx, r.y + 36)))
+            name = ENEMIES[eid]["name"].split(",")[0] if seen else "???"
+            if ui.font(13, True).size(name)[0] > cw - 8:
+                name = name[:16] + "."
+            text(s, name, (r.centerx, r.bottom - 32), 13, ui.TEXT if seen else ui.DIM, True, center=True)
+            text(s, f"defeated x{kills.get(eid, 0)}" if seen else tier, (r.centerx, r.bottom - 15), 12, ui.DIM,
+                 center=True)
+            if seen and r.collidepoint(mouse):
+                hov = eid
+        if hov:
+            e = ENEMIES[hov]
+            lines = ui.wrap(e.get("desc", "") or "A foe of the road.", 14, 300)
+            rr = pygame.Rect(min(mouse[0] + 16, W - 330), min(mouse[1] + 16, H - 120), 320, 48 + 18 * len(lines))
+            panel(s, rr, ui.PANEL2, ui.RED, radius=6)
+            text(s, e["name"], (rr.x + 10, rr.y + 8), 15, ui.RED, True)
+            text_block(s, " ".join(lines), (rr.x + 10, rr.y + 30), 300, 14, ui.TEXT)
+        n = sum(1 for e in self.enemies if progress.seen_enemy(e))
+        return f"{n} / {len(self.enemies)} enemies met"
+
+    def draw_recipes(self, s, mouse):
+        y = 130
+        made = 0
+        tip = None
+        for k, (pair, res) in enumerate(RECIPES.items()):
+            col, row = k % 2, k // 2
+            x, y = 24 + col * 616, 130 + row * 84
+            r = pygame.Rect(x, y, 600, 76)
+            known = progress.seen_item(res)
+            made += known
+            panel(s, r, ui.PANEL if known else (22, 20, 28), (255, 210, 120) if known else ui.LINE, radius=8)
+            a, b = sorted(pair)
+            for j, iid in enumerate((a, b, res)):
+                cx = r.x + 46 + j * 150
+                pic = ui.art(iid, 44)
+                seen = progress.seen_item(iid)
+                if pic:
+                    s.blit(pic if seen else self.silhouette(pic), pic.get_rect(center=(cx, r.y + 30)))
+                text(s, ITEMS[iid]["name"] if seen else "???", (cx, r.y + 60), 12, ui.TEXT if seen else ui.DIM,
+                     center=True)
+                if pygame.Rect(cx - 30, r.y + 4, 60, 68).collidepoint(mouse) and seen:
+                    tip = iid
+            text(s, "+", (r.x + 121, r.y + 28), 24, ui.GOLD, True, center=True)
+            text(s, "=", (r.x + 271, r.y + 28), 24, ui.GOLD, True, center=True)
+            note = "Place them next to each other in your kit." if not known else "Discovered!"
+            text(s, note, (r.x + 400, r.y + 28), 13, (255, 210, 120) if known else ui.DIM)
+        if tip:
+            rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 200), 330, 100)
+            ui.draw_tooltip(s, tip, rr, fit=True)
+        return f"{made} / {len(RECIPES)} recipes made"
+
+    def draw(self, s):
+        s.fill(ui.BG)
+        text(s, "Compendium", (24, 14), 34, ui.GOLD, True)
+        mouse = pygame.mouse.get_pos()
+        self.chips = []
+        if self.tab == "Items":
+            x = 24
+            for key, label, col in [(None, "All", ui.TEXT), ("shared", "Shared", ui.TEXT)] + \
+                    [(c, ch["name"], ch["color"]) for c, ch in CHARACTERS.items()]:
+                w = ui.font(14, True).size(label)[0] + 24
+                r = pygame.Rect(x, 76, w, 32)
+                on = self.filter == key
+                panel(s, r, (60, 52, 36) if on else ui.PANEL, ui.GOLD if on else ui.LINE, radius=6)
+                text(s, label, (r.x + 12, r.y + 7), 14, col, True)
+                self.chips.append((r, key))
+                x = r.right + 8
+            count = self.draw_items(s, mouse)
+            text(s, "Gold dot = recipe item.  Scroll for more.", (W - 24, 84), 13, ui.DIM, right=True)
+        elif self.tab == "Enemies":
+            count = self.draw_enemies(s, mouse)
+        else:
+            count = self.draw_recipes(s, mouse)
+        text(s, count, (280, 26), 18, ui.DIM, True)
         self.draw_buttons(s)

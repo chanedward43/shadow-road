@@ -28,9 +28,20 @@ def stage():
                     ignore=lambda d, names: [n for n in names if n == "__pycache__" or n in SKIP_MODULES])
     os.makedirs(os.path.join(STAGE, "assets"))
     shutil.copytree(os.path.join(ROOT, "assets", "art"), os.path.join(STAGE, "assets", "art"))
-    audio = os.path.join(ROOT, "assets", "audio")             # sound effects + music (OGG, ~1.4 MB)
-    if os.path.exists(audio):
-        shutil.copytree(audio, os.path.join(STAGE, "assets", "audio"))
+    sfx = os.path.join(ROOT, "assets", "audio", "sfx")       # sound effects go in the game bundle;
+    if os.path.exists(sfx):                                   # music is downloaded on demand (see publish_music)
+        shutil.copytree(sfx, os.path.join(STAGE, "assets", "audio", "sfx"))
+
+
+def publish_music(out):
+    """Music lives next to the page (not inside the game bundle), so the first load is small; the game
+    fetches music/<track>.ogg the first time each track plays (roguegame/audio.py)."""
+    src = os.path.join(ROOT, "assets", "audio", "music")
+    if os.path.exists(src):
+        dst = os.path.join(out, "music")
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
     for name in ("balance.json", "online.json"):       # online.json: the Arena's server (optional)
         src = os.path.join(ROOT, "assets", name)
         if os.path.exists(src):
@@ -49,6 +60,7 @@ def build(serve=False):
     print(" ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
     out = os.path.join(STAGE, "build", "web")
+    publish_music(out)
     print(f"Web build ready: {out}")
     return out
 

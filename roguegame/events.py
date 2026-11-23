@@ -5,7 +5,7 @@ Each option's `do(run, rng)` changes the run and returns a result dict:
     battle  - optional (enemy_id, kind): start this fight next; normal rewards follow
     choose  - optional list of item ids: let the player pick one for free
 """
-from .data import ITEMS, TECHNIQUES, STAGES, MAX_LEVEL
+from .data import ITEMS, TECHNIQUES, STAGES, max_level
 
 
 def _hp(run, frac):
@@ -166,7 +166,7 @@ def _gold(n):
 
 
 def _upgradable(run):
-    return any(i.level < MAX_LEVEL for i in run.all_items())
+    return any(i.level < max_level(i.data) for i in run.all_items())
 
 
 EVENTS = [

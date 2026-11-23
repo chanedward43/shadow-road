@@ -2,8 +2,8 @@
 
     python tools/import_audio.py
 
-Needs ffmpeg on PATH. Sound effects become mono 22 kHz; music mono ~48 kbps, so the whole set stays a
-few MB for the website. Edit SFX / MUSIC below to swap a sound.
+Needs ffmpeg on PATH. Everything becomes mono 44.1 kHz OGG with loudness normalisation (consistent volume).
+Music is not bundled into the web page: the website downloads each track the first time it plays. Edit SFX / MUSIC below to swap a sound.
 """
 import os
 import subprocess
@@ -32,9 +32,23 @@ MUSIC = {
 }
 
 
+def peak_db(src):
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", src, "-af", "volumedetect", "-f", "null", "-"],
+                         capture_output=True, text=True).stderr
+    for line in out.splitlines():
+        if "max_volume" in line:
+            return float(line.split("max_volume:")[1].split("dB")[0])
+    return 0.0
+
+
 def convert(src, dst, music):
-    args = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-ac", "1", "-ar", "22050" if not music else "32000",
-            "-c:a", "libvorbis", "-q:a", "0" if music else "2", dst]
+    # 44.1 kHz (low sample rates sounded crackly once resampled).
+    # Music: EBU R128 loudness normalisation to -20 LUFS, so every track is about as loud as the others.
+    # Effects: peak-normalised to -6 dB. Short clips pushed to 0 dB clip (sounds like static) - and several
+    # play at once in battle, so they need the headroom.
+    norm = "loudnorm=I=-20:TP=-2:LRA=11" if music else f"volume={-6.0 - peak_db(src):.1f}dB"
+    args = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-af", norm, "-ac", "1", "-ar", "44100",
+            "-c:a", "libvorbis", "-q:a", "3" if music else "4", dst]
     subprocess.run(args, check=True)
 
 

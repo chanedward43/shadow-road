@@ -23,6 +23,7 @@ def record_from_run(run, won):
         game=label(),
         mode=getattr(run, "mode", "story"),
         asc=getattr(run, "asc", 0),
+        dmg=getattr(run, "stats", {}).get("dmg", 0),
         date=time.time(),
         char=run.char_id,
         won=bool(won),

@@ -170,6 +170,8 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
             elif res.get("choose"):
                 pick_item(res["choose"], "reward")
         pack(run)
+        if run.combine_recipes():
+            pack(run)
     out["stage"] = run.stage
     out["battles"] = run.battles_won
     out["final_kit"] = [(i.id, i.level) for i in run.bag.items]

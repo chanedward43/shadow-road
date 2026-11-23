@@ -433,7 +433,17 @@ def describe_stats(st):
 
 # ================================================================ ITEM LEVELS
 # Drop a copy of an item onto an identical one (same level) to merge them: level 2, then level 3.
-MAX_LEVEL = 3
+MAX_LEVEL = 3            # most items
+WEAPON_MAX_LEVEL = 5     # weapons can keep merging to level 5 (levels 4-5 grow a little less each)
+
+
+def max_level(d):
+    return WEAPON_MAX_LEVEL if "weapon" in d.get("tags", ()) and not d.get("enemy") else MAX_LEVEL
+
+
+def _level_mult(level):
+    """x1.5 per level up to 3, then +35% per level for weapon levels 4-5."""
+    return 1 + 0.5 * min(level - 1, 2) + 0.35 * max(0, level - 3)
 
 
 def sell_value(iid, level=1):
@@ -448,7 +458,7 @@ def level_stats(st, level):
     out["level"] = level
     if level <= 1:
         return out
-    mult = 1 + 0.5 * (level - 1)
+    mult = _level_mult(level)
     if out.get("dmg"):
         out["dmg"] = (round(out["dmg"][0] * mult), round(out["dmg"][1] * mult))
     for k in ("block", "heal", "poison", "burn", "regen", "s_block", "s_hp", "s_regen", "s_thorns", "dodge",
@@ -468,7 +478,7 @@ def level_stats(st, level):
     if out.get("per_tag"):
         out["per_tag"] = (out["per_tag"][0], out["per_tag"][1] + (level - 1))
     if out.get("cd"):
-        out["cd"] = round(out["cd"] * (1 - 0.08 * (level - 1)), 2)
+        out["cd"] = round(out["cd"] * (1 - 0.08 * min(level - 1, 2) - 0.04 * max(0, level - 3)), 2)
     if out.get("aura"):
         a = out["aura"]
         for k in ("dmg", "block", "poison", "burn", "heal"):
@@ -886,7 +896,7 @@ SIGNATURE_DROP_CHANCE = {"mob": 0.3, "elite": 0.5, "boss": 0.7}
 
 def _enemy_usable(d):
     """Items an enemy can actually use (no grid: pure auras do nothing; no Ki: Ki items do nothing)."""
-    if d["enemy"] or d.get("loot") or d.get("ki") or d.get("ki_burst") or d.get("trigger"):
+    if d["enemy"] or d.get("loot") or d.get("ki") or d.get("ki_burst") or d.get("trigger") or d.get("recipe"):
         return False
     if d.get("cd"):
         return True
@@ -1236,3 +1246,57 @@ ASCENSION = [
     "Red sky: the Blood Moon already rises over stage 3.",
 ]
 MAX_ASCENSION = len(ASCENSION) - 1
+
+
+# ================================================================ v9: RECIPES
+# Put two ingredients next to each other in your KIT: when you leave the shop / bag screen they fuse
+# into a unique item (at the lower of the two levels). Recipe items are never sold in shops.
+def ritem(iid, name, shape, rarity, tags, cls=None, **stats):
+    item(iid, name, shape, rarity, tags, cls=cls, recipe=True, **stats)
+
+
+ritem("honed_katana", "Honed Katana", V3, "epic", ["weapon"], cls="samurai", cd=1.7, dmg=(8, 11), crit=0.15)
+ritem("kabuto_set", "Kabuto & Dō", SQ, "epic", ["armor"], cls="samurai", s_block=24, s_thorns=3)
+ritem("star_storm", "Storm of Stars", H2, "epic", ["weapon"], cls="ninja", cd=0.8, dmg=(2, 4), hits=2)
+ritem("napalm_pot", "Napalm Pot", SQ, "epic", ["fire"], cls="ninja", cd=3.0, dmg=(3, 5), burn=6)
+ritem("mist_tessen", "Tessen of Mist", H2, "epic", ["weapon", "armor"], cls="ninja", cd=1.5, dmg=(4, 6), dodge=1)
+ritem("venom_dart", "Venom Dart Pipe", V2, "epic", ["weapon", "poison"], cls="kunoichi", cd=1.3, dmg=(2, 4),
+      poison=3)
+ritem("seimei_talisman", "Seimei's Talisman", V2, "epic", ["summon", "charm", "curse"], cls="onmyoji", cd=4.5,
+      curse=1, summon=dict(name="Crane Lord", dmg=(4, 6), cd=1.4))
+ritem("warrior_monk", "Benkei's Naginata", V3, "epic", ["weapon", "ki"], cls="sohei", cd=1.8, dmg=(5, 8), ki=1,
+      block=4)
+ritem("festival_bento", "Festival Bentō", SQ, "rare", ["food"], cd=4.0, heal=9, regen=1, stamina_gain=2)
+ritem("shakujo", "Pilgrim's Shakujō", V3, "epic", ["weapon"], cd=1.6, dmg=(4, 6), heal=2, cleanse=1)
+ritem("golden_maneki", "Golden Maneki-neko", S1, "legendary", ["charm"], gold_per_win=4, interest=15)
+
+RECIPES = {
+    frozenset(("katana", "whetstone")): "honed_katana",
+    frozenset(("do_armor", "kasa_hat")): "kabuto_set",
+    frozenset(("shuriken", "kunai")): "star_storm",
+    frozenset(("fire_bomb", "oil_flask")): "napalm_pot",
+    frozenset(("iron_fan", "smoke_bomb")): "mist_tessen",
+    frozenset(("poison_tea", "fukiya")): "venom_dart",
+    frozenset(("ofuda", "paper_shikigami")): "seimei_talisman",
+    frozenset(("temple_naginata", "kesa_robe")): "warrior_monk",
+    frozenset(("onigiri", "sake_gourd")): "festival_bento",
+    frozenset(("bo_staff", "ofuda")): "shakujo",
+    frozenset(("maneki_neko", "coin_purse")): "golden_maneki",
+}
+
+
+def recipes_for(iid):
+    """[(partner_id, result_id)] for every recipe this item is part of."""
+    out = []
+    for pair, res in RECIPES.items():
+        if iid in pair:
+            other = [p for p in pair if p != iid]
+            out.append((other[0] if other else iid, res))
+    return out
+
+
+def recipe_of(result_id):
+    for pair, res in RECIPES.items():
+        if res == result_id:
+            return sorted(pair)
+    return None

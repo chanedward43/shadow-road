@@ -140,8 +140,10 @@ def bot_record(char_id, rnd, seed):
         if wants_technique(run):
             run.learn(rng.choice(run.technique_choices()))
         # bots walk the floor too: a reward item (shrine or won fight) and one other node
-        run.add_item(max(run.reward_choices("fight"), key=lambda o: _bot_score(run, o, rng)))
-        resolve_floor(run, rng.choice(("forge", "bounty", "dojo")))
+        for _ in range(3):        # a 5-node floor: about three reward items (won fights / shrines) ...
+            run.add_item(max(run.reward_choices("fight"), key=lambda o: _bot_score(run, o, rng)))
+        for _ in range(2):        # ... and two other nodes
+            resolve_floor(run, rng.choice(("forge", "bounty", "dojo")))
         for shop in range(2):                        # look at the shop, maybe reroll once
             offers = run.shop_offers()
             while True:
@@ -224,24 +226,32 @@ def pick_floor_event(run):
     return EVENT_BY_ID[run.rng.choice(FLOOR_EVENTS)]
 
 
+FLOOR_ROWS = 5          # choices you make on a floor before the merchant and the duel
+
+
 def gen_floor(run):
-    """A short random floor for this round: two rows of nodes, a merchant, then the ghost duel.
-    Uses the run's map fields, so the normal map screen draws it."""
+    """A random floor for this round: FLOOR_ROWS rows of 2-4 nodes (different every round), a merchant,
+    then the ghost duel. Uses the run's map fields, so the normal map screen draws it."""
     rng = run.rng
-    pool = ["fight"] * 5 + ["elite"] * 2 + ["treasure"] * 2 + ["event"] * 2 + ["forge", "bounty", "dojo"]
+    # every floor gets its own flavour: some lean on fights, some on treasure and events
+    weights = dict(fight=rng.randint(3, 6), elite=rng.randint(1, 3), treasure=rng.randint(1, 3),
+                   event=rng.randint(1, 3), forge=1, bounty=1, dojo=1, shop=rng.randint(0, 1))
+    kinds_all, w = zip(*weights.items())
     rows = []
-    for r in range(2):
-        n = rng.choice([2, 3, 3])
-        kinds = [rng.choice(pool) for _ in range(n)]
-        if r == 0 and "fight" not in kinds:
-            kinds[rng.randrange(n)] = "fight"
+    for r in range(FLOOR_ROWS):
+        n = rng.choice([2, 3, 3, 4]) if r else rng.choice([2, 3])
+        kinds = rng.choices(kinds_all, weights=w, k=n)
+        if r == 0:
+            kinds = ["fight" if k in ("shop", "elite") else k for k in kinds]
+            if "fight" not in kinds:
+                kinds[rng.randrange(n)] = "fight"
         rows.append([dict(row=r, col=c, kind=k, x=(c + 0.5) / n, links=[]) for c, k in enumerate(kinds)])
-    rows.append([dict(row=2, col=0, kind="shop", x=0.5, links=[])])
-    rows.append([dict(row=3, col=0, kind="boss", x=0.5, links=[])])
+    rows.append([dict(row=FLOOR_ROWS, col=0, kind="shop", x=0.5, links=[])])
+    rows.append([dict(row=FLOOR_ROWS + 1, col=0, kind="boss", x=0.5, links=[])])
     for r in range(len(rows) - 1):
         cur, nxt = rows[r], rows[r + 1]
         for node in cur:
-            near = [j for j, m in enumerate(nxt) if abs(m["x"] - node["x"]) <= 0.4]
+            near = [j for j, m in enumerate(nxt) if abs(m["x"] - node["x"]) <= 0.34]
             node["links"] = near or [min(range(len(nxt)), key=lambda j: abs(nxt[j]["x"] - node["x"]))]
         for j, m in enumerate(nxt):
             if not any(j in nd["links"] for nd in cur):

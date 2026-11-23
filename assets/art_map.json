@@ -139,7 +139,7 @@
  "temple_naginata": "Items/Weapons/Lance/Sprite.png",
  "kesa_robe": "Items/Object/Bag.png",
  "prayer_bell": "Items/Treasure/GoldCup.png",
- "shakujo": "Items/Weapons/Stick/Sprite.png",
+ "shakujo": "Items/Weapons/Pickaxe/Sprite.png",
  "iron_sandals": "Ui/Skill Icon/Items & Weapon/Boot.png",
  "sutra_scroll": "Items/Scroll/Scroll.png",
  "temple_bell": "Items/Treasure/SilverCup.png",
@@ -235,5 +235,15 @@
  "herbal_salve": "Items/Food/Seed3.png",
  "wind_charm": "Items/Resource/feather.png",
  "antidote": "Items/Potion/EmptyPot.png",
- "omikuji": "Items/Food/FortuneCookie.png"
+ "omikuji": "Items/Food/FortuneCookie.png",
+ "honed_katana": "Items/Weapons/BigSword/Sprite.png",
+ "kabuto_set": "Items/Treasure/GoldCup.png",
+ "star_storm": "Items/Treasure/Coin2.png",
+ "napalm_pot": "Items/Potion/LifePot.png",
+ "mist_tessen": "Items/Weapons/Fork/Sprite.png",
+ "venom_dart": "Items/Weapons/Bow2/Sprite.png",
+ "seimei_talisman": "Items/Scroll/Scroll.png",
+ "warrior_monk": "Items/Weapons/Lance/Sprite.png",
+ "festival_bento": "Items/Food/Sushi2.png",
+ "golden_maneki": "Items/Treasure/BigTreasureChest.png"
 }

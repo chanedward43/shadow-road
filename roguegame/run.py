@@ -8,7 +8,7 @@ import random
 import time
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
-                   TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, MAX_LEVEL, REST_HEAL,
+                   TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, max_level, REST_HEAL,
                    SIGNATURE_DROP_CHANCE, enemy_tier, endless_mult, BLOOD_MOON_STAGE, CONSUMABLES,
                    MAX_CONSUMABLES)
 from .inventory import Grid, ItemInst
@@ -73,6 +73,7 @@ class RunState:
         self.asc = asc           # ascension level (0 = normal), see ASCENSION in data.py
         self.consumables = []    # used up in the next battle
         self.flags = {}          # multi-stage event state, e.g. {"tanuki": "helped"}
+        self.stats = dict(dmg=0, items={}, battles=0)   # for the end-of-run screen
         self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
@@ -211,7 +212,7 @@ class RunState:
     def item_pool(self, rarity):
         owned = self.owned_ids() if rarity == "legendary" else set()   # legendaries are unique
         return [i for i in ITEMS.values()
-                if not i["enemy"] and not i.get("loot") and i["rarity"] == rarity
+                if not i["enemy"] and not i.get("loot") and not i.get("recipe") and i["rarity"] == rarity
                 and i["cls"] in (None, self.char_id) and i["id"] not in owned]
 
     def roll_item(self, bias=0):
@@ -281,7 +282,7 @@ class RunState:
     # ---------------- levelling (merge two identical items)
     @staticmethod
     def can_merge(a, b):
-        return a is not b and a.id == b.id and a.level == b.level and a.level < MAX_LEVEL
+        return a is not b and a.id == b.id and a.level == b.level and a.level < max_level(a.data)
 
     def merge(self, keep, consume):
         """Level up `keep` by merging `consume` (identical item, same level) into it."""
@@ -313,8 +314,8 @@ class RunState:
     def upgrade_random(self, rng=None):
         """Level up a random upgradable item (blacksmith events). Returns the item or None."""
         rng = rng or self.rng
-        cands = [i for i in self.bag.items if i.level < MAX_LEVEL] or \
-                [i for i in self.all_items() if i.level < MAX_LEVEL]
+        cands = [i for i in self.bag.items if i.level < max_level(i.data)] or \
+                [i for i in self.all_items() if i.level < max_level(i.data)]
         if not cands:
             return None
         it = rng.choice(cands)
@@ -376,3 +377,43 @@ class RunState:
             self.gold_earned += g
         self.consumables = []
         return paid
+
+    # ---------------- recipes
+    def combine_recipes(self):
+        """Fuse every pair of recipe ingredients that touch in the kit. Returns [(a, b, result)]."""
+        from .data import RECIPES
+        made = []
+        changed = True
+        while changed:
+            changed = False
+            for a in list(self.bag.items):
+                for b in self.bag.neighbors(a):
+                    res = RECIPES.get(frozenset((a.id, b.id)))
+                    if not res or a.id == b.id:
+                        continue
+                    spots = [(a.x, a.y), (b.x, b.y)]
+                    self.bag.remove(a)
+                    self.bag.remove(b)
+                    inst = ItemInst(res, level=min(a.level, b.level))
+                    if not any(self.bag.place(inst, x, y) for x, y in spots):
+                        self.bag.first_fit(inst) or self.stash.first_fit(inst)
+                    made.append((a.id, b.id, res))
+                    changed = True
+                    break
+                if changed:
+                    break
+        return made
+
+    def record_battle(self, items):
+        """Add one battle's per-item stats (CItem.stats) to the run totals."""
+        self.stats["battles"] += 1
+        for ci in items:
+            d = ci.stats.get("dmg", 0)
+            if d:
+                self.stats["dmg"] += d
+                iid = ci.st["id"]
+                self.stats["items"][iid] = self.stats["items"].get(iid, 0) + d
+
+    def best_item(self):
+        items = self.stats.get("items") or {}
+        return max(items.items(), key=lambda kv: kv[1]) if items else None

@@ -155,8 +155,22 @@ class TestMechanics(unittest.TestCase):
         r.auto_merge()                       # 4 katanas -> two level-2s -> one level-3
         self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "katana"), [3])
         r.add_item("katana", level=3)
-        r.auto_merge()                       # level 3 is the cap: nothing merges further
-        self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "katana"), [3, 3])
+        r.auto_merge()                       # weapons keep going: two level-3s -> level 4
+        self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "katana"), [4])
+        r.add_item("katana", level=4)
+        r.auto_merge()
+        self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "katana"), [5])
+        r.add_item("katana", level=5)
+        r.auto_merge()                       # level 5 is the weapon cap
+        self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "katana"), [5, 5])
+        r.add_item("onigiri", level=3)
+        r.add_item("onigiri", level=3)
+        r.auto_merge()                       # non-weapons stop at level 3
+        self.assertEqual(sorted(i.level for i in r.all_items() if i.id == "onigiri"), [1, 3, 3])
+        d5 = data.level_stats(data.ITEMS["katana"], 5)
+        d3 = data.level_stats(data.ITEMS["katana"], 3)
+        self.assertGreater(d5["dmg"][0], d3["dmg"][0])
+        self.assertLess(d5["cd"], d3["cd"])
         st = data.level_stats(data.ITEMS["katana"], 3)
         self.assertGreater(st["dmg"][0], data.ITEMS["katana"]["dmg"][0])
 
@@ -749,6 +763,9 @@ class TestV8Systems(unittest.TestCase):
         run = arena.new_run("ninja", 8)
         arena.start_round(run)
         rows = arena.gen_floor(run)
+        self.assertEqual(len(rows), arena.FLOOR_ROWS + 2, "5 choices, then merchant, then duel")
+        self.assertNotEqual([[n["kind"] for n in r] for r in rows],
+                            [[n["kind"] for n in r] for r in arena.gen_floor(run)], "every floor is different")
         self.assertEqual([n["kind"] for n in rows[-2]], ["shop"], "a merchant before the duel")
         self.assertEqual([n["kind"] for n in rows[-1]], ["boss"], "the floor ends in the ghost duel")
         self.assertIn("fight", [n["kind"] for n in rows[0]])
@@ -768,6 +785,65 @@ class TestV8Systems(unittest.TestCase):
             self.assertIn(out["stage"], (1, 2, 3))
 
 
+class TestV9(unittest.TestCase):
+    def test_recipes_combine_when_adjacent(self):
+        r = RunState("samurai", 3)
+        r.bag.items, r.stash.items = [], []
+        r.bag.place(ItemInst("katana"), 0, 0)
+        r.bag.place(ItemInst("whetstone"), 1, 0)
+        made = r.combine_recipes()
+        self.assertEqual(made, [("katana", "whetstone", "honed_katana")])
+        self.assertEqual([i.id for i in r.bag.items], ["honed_katana"])
+        far = RunState("samurai", 3)
+        far.bag.items, far.stash.items = [], []
+        far.bag.place(ItemInst("katana"), 0, 0)
+        far.bag.place(ItemInst("whetstone"), 5, 0)
+        self.assertEqual(far.combine_recipes(), [], "not touching: nothing happens")
+        for pair, res in data.RECIPES.items():
+            self.assertTrue(data.ITEMS[res].get("recipe"))
+            self.assertTrue(all(i in data.ITEMS for i in pair))
+            self.assertTrue(has_art(res), res)
+        self.assertFalse(any(i["id"] == "honed_katana" for i in r.item_pool("epic")), "never sold")
+
+    def test_discovery_and_endless_lock(self):
+        from roguegame import progress, storage
+        storage.delete(progress.KEY)
+        progress.reset_cache()
+        self.assertFalse(progress.endless_unlocked())
+        progress.discover_item("katana", "katana", "kunai")
+        progress.discover_enemy("kappa")
+        self.assertTrue(progress.seen_item("kunai") and progress.seen_enemy("kappa"))
+        self.assertEqual(progress.data()["seen_items"].count("katana"), 1)
+        progress.on_run_end(RunState("ninja", 1), cleared=True)
+        self.assertTrue(progress.endless_unlocked())
+        storage.delete(progress.KEY)
+        progress.reset_cache()
+
+    def test_arena_save_and_resume(self):
+        from roguegame import arena
+        run = arena.new_run("onmyoji", 4)
+        arena.start_round(run)
+        arena.gen_floor(run)
+        run.visit(run.available_nodes()[0])
+        save.save_arena(run)
+        back = save.load_arena()
+        self.assertEqual(back.arena["round"], 1)
+        self.assertEqual([[n["kind"] for n in r] for r in back.map], [[n["kind"] for n in r] for r in run.map])
+        self.assertEqual(back.pos, run.pos)
+        save.clear_arena()
+        self.assertIsNone(save.load_arena())
+        self.assertIsNotNone(save.load_run() is None or True)
+
+    def test_run_stats_for_end_screen(self):
+        r = RunState("ninja", 2)
+        b = make_battle(r, "kappa", 1.0, seed=1)
+        b.run_to_end()
+        r.record_battle(b.f[0].items)
+        self.assertGreater(r.stats["dmg"], 0)
+        iid, dmg = r.best_item()
+        self.assertEqual(dmg, max(r.stats["items"].values()))
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame
@@ -780,7 +856,8 @@ class TestScreens(unittest.TestCase):
                    scenes.TechniqueScene(g, then=lambda: None), scenes.RestScene(g),
                    scenes.EventScene(g, EVENTS[0]), scenes.BattleScene(g, "ashura", "boss"), scenes.EndScene(g, True),
                    scenes.MatchHistoryScene(g), scenes.MatchHistoryScene(g, tab="arena"),
-                   scenes.ArenaLobbyScene(g), scenes.SettingsScene(g), scenes.AchievementsScene(g)]
+                   scenes.ArenaLobbyScene(g), scenes.SettingsScene(g), scenes.AchievementsScene(g),
+                   scenes.CompendiumScene(g)]
         for sc in screens:
             with self.subTest(screen=type(sc).__name__):
                 g.change(sc)

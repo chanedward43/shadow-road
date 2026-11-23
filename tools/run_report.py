@@ -111,7 +111,12 @@ def pct(a, b):
     return round(100.0 * a / b, 1) if b else None
 
 
-def verdict_item(delta, n, pick_rate):
+STARTERS = {i for ch in CHARACTERS.values() for i in ch["start"]}
+
+
+def verdict_item(delta, n, pick_rate, iid=None):
+    if iid in STARTERS and delta is not None and delta < 0:
+        return "Starting item"           # runs that die early still hold their starting kit: delta is biased
     if n >= 25 and delta is not None and delta >= 12:
         return "Too strong?"
     if n >= 25 and delta is not None and delta <= -12:
@@ -177,10 +182,14 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
         "Success = the stage-3 villain was defeated.",
         "Summary: win rate, how deep runs get and what ends them, per class.",
         "Runs: one row per run - where it ended (stage + floor), the final board, MVP item, techniques, events.",
-        "Items: pick rate (picked / offered) and how often runs that FINISHED with the item won, compared with "
-        "that class's normal win rate (Win-rate delta). Big + = maybe too strong, big - = maybe too weak.",
+        "Items: pick rate (picked / offered) and how often runs that FINISHED with the item won. The delta is "
+        "FAIR: each run is compared with runs of the same class that got at least as far as the stage where "
+        "the item was gained (a stage-3 item is only compared with runs that reached stage 3). "
+        "Big + = maybe too strong, big - = maybe too weak.",
         "Enemies: how often each enemy beats the player, and how much HP it takes when the player wins. "
         "Bosses should be dangerous; a regular mob with a high kill rate may be over-tuned.",
+        "Danger by floor: player loss % for the 1st, 2nd, 3rd... battle of a run and for every stage/floor. "
+        "The first battles should be (near) 0% and each stage should climb smoothly to its boss.",
         "Events: how often each option is picked and how runs that picked it ended.",
         "Techniques: how often each is learned and the win rate of runs that learned it.",
         "Winning boards: the final kit of every winning run (also saved as PNGs in the wins folder).",
@@ -239,13 +248,16 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
     # ---- Items
     offered = collections.Counter()
     picked = collections.Counter()
-    held = collections.defaultdict(list)          # item -> [(class, win)]
+    held = collections.defaultdict(list)          # item -> [(class, win, stage gained)]
+    # P(win | class, reached stage s): the fair baseline for an item gained in stage s
+    reach = {(c, s): pct(sum(r["win"] for r in rs if r["stage"] >= s), sum(1 for r in rs if r["stage"] >= s))
+             for c, rs in by_cls.items() for s in (1, 2, 3)}
     dmg = collections.defaultdict(list)
     for r in runs:
         offered.update(r["offered"])
         picked.update(r["picks"])
         for iid in {i["id"] for i in r["kit"]["items"]}:
-            held[iid].append((r["char"], r["win"]))
+            held[iid].append((r["char"], r["win"], min(3, r.get("acquired", {}).get(iid, 1))))
         for iid, d in r["item_dmg"].items():
             dmg[iid].append(d)
     rows = []
@@ -254,19 +266,23 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
             continue
         h = held.get(iid, [])
         n = len(h)
-        wr = pct(sum(w for _, w in h), n)
-        expected = statistics.mean(base_wr[c] for c, _ in h) if h else None   # what these classes usually win
+        wr = pct(sum(w for _, w, _ in h), n)
+        exp = [reach.get((c, s)) for c, _, s in h]
+        exp = [e for e in exp if e is not None]
+        expected = statistics.mean(exp) if exp else None      # what comparable runs usually win
+        stage_gained = round(statistics.mean(s for _, _, s in h), 1) if h else None
         delta = round(wr - expected, 1) if n and expected is not None else None
         pr = pct(picked[iid], offered[iid]) if offered[iid] else None
         rows.append([d["name"], CHARACTERS[d["cls"]]["name"] if d["cls"] else "shared", d["rarity"], d["price"],
                      "recipe" if d.get("recipe") else ("enemy drop" if d.get("loot") else "shop"),
-                     offered[iid], picked[iid], pr, n, wr, delta,
-                     round(statistics.mean(dmg[iid]), 1) if dmg[iid] else 0, verdict_item(delta, n, pr)])
-    rows.sort(key=lambda r: (r[10] is None, -(r[10] or 0)))
+                     offered[iid], picked[iid], pr, n, stage_gained, wr, expected and round(expected, 1), delta,
+                     round(statistics.mean(dmg[iid]), 1) if dmg[iid] else 0, verdict_item(delta, n, pr, iid)])
+    rows.sort(key=lambda r: (r[12] is None, -(r[12] or 0)))
     sheet("Items", ["Item", "Class", "Rarity", "Price", "Source", "Times offered", "Times picked", "Pick %",
-                    "Runs ending with it", "Win % with it", "Win-rate delta vs class", "Avg damage per run",
-                    "Verdict"], rows, [26, 12, 10, 7, 10, 9, 9, 8, 9, 9, 11, 11, 14],
-          scale_cols=[("Win-rate delta vs class", ("F8696B", "63BE7B"))])
+                    "Runs ending with it", "Avg stage gained", "Win % with it", "Win % of comparable runs",
+                    "Fair win-rate delta", "Avg damage per run", "Verdict"], rows,
+          [26, 12, 10, 7, 10, 9, 9, 8, 9, 8, 9, 11, 10, 11, 14],
+          scale_cols=[("Fair win-rate delta", ("F8696B", "63BE7B"))])
 
     # ---- Enemies
     fights = collections.defaultdict(list)
@@ -298,6 +314,29 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
                       "Avg HP% lost when player wins", "Avg fight time (s)", "Avg enemy max HP", "Flag"], rows,
           [26, 7, 6, 7, 8, 9, 12, 10, 10, 18],
           scale_cols=[("Player loss %", ("63BE7B", "F8696B")), ("Avg HP% lost when player wins", ("63BE7B", "F8696B"))])
+
+    # ---- Danger by floor: is each stage a smooth climb? (and the first battles must be safe)
+    nth = collections.defaultdict(list)
+    floor = collections.defaultdict(list)
+    for r in runs:
+        for k, f in enumerate(r["fights"]):
+            nth[min(k + 1, 12)].append(f)
+            floor[(f["stage"], f["floor"], f["kind"])].append(f)
+    rows = []
+    for k in sorted(nth):
+        fs = nth[k]
+        won = [f for f in fs if f["won"]]
+        rows.append([f"Battle #{k}" + ("+" if k == 12 else ""), "", "", len(fs), pct(len(fs) - len(won), len(fs)),
+                     round(statistics.mean(100.0 * (f["hp_before"] - f["hp_after"]) / max(1, f["max_hp"])
+                                           for f in won), 1) if won else None])
+    for (st, fl, kind) in sorted(floor):
+        fs = floor[(st, fl, kind)]
+        won = [f for f in fs if f["won"]]
+        rows.append([f"Stage {st}", fl, kind, len(fs), pct(len(fs) - len(won), len(fs)),
+                     round(statistics.mean(100.0 * (f["hp_before"] - f["hp_after"]) / max(1, f["max_hp"])
+                                           for f in won), 1) if won else None])
+    sheet("Danger by floor", ["When", "Floor", "Node", "Fights", "Player loss %", "Avg HP% lost when player wins"],
+          rows, [14, 7, 8, 8, 10, 14], scale_cols=[("Player loss %", ("63BE7B", "F8696B"))])
 
     # ---- Events
     from roguegame.events import EVENT_BY_ID

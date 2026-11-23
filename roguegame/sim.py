@@ -197,6 +197,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
     out["awakened"] = [(i.id, i.awakened) for i in run.all_items() if i.awakened]
     out["infused"] = [(i.id, i.infusion["src"]) for i in run.all_items() if i.infusion]
     out["path"] = [p["kind"] for p in run.path]
+    out["acquired"] = dict(run.acquired)
     out["battles"] = run.battles_won
     out["final_kit"] = [(i.id, i.level) for i in run.bag.items]
     out["techniques"] = list(run.techniques)

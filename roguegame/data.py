@@ -1302,3 +1302,76 @@ def recipe_of(result_id):
         if res == result_id:
             return sorted(pair)
     return None
+
+
+# ================================================================ v0.97 CONTENT BALANCE (from reports/v0.96 run report)
+# Fair item deltas compare each item with runs of the same class that reached the stage it was gained in.
+# Stage 1 was where 55-70% of runs died, mostly to two elites and the stage-1 bosses; stage 2-3 mobs
+# almost never killed anyone; Lord Ashura was far easier than Orochi; early legendary drops carried runs.
+def _tune_enemy(eid, **kw):
+    ENEMIES[eid].update(kw)
+
+
+def _tune_item(iid, **kw):
+    ITEMS[iid].update(kw)
+
+
+# stage-1 elites (player lost 70% / 46% of fights)
+_tune_enemy("ronin_duelist", hp=85)
+_tune_item("e_quickdraw", dmg=(9, 12), stun=0.6)
+_tune_enemy("kamaitachi", hp=75, evade=0.15)
+# stage-1 bosses (40% / 30% player losses vs ~20% for stage-2 bosses)
+_tune_item("e_toad_tongue", lifesteal=0.2)
+ENEMIES["gama"]["phases"][0]["heal"] = 15
+_tune_enemy("kurogane", hp=185)
+# final bosses: Ashura 13% vs Orochi 42% - bring them together
+_tune_enemy("ashura", hp=880)
+_tune_enemy("orochi", hp=580)
+# a stage-2 mob that out-killed the others
+_tune_enemy("jorogumo", hp=85)
+# stage-2/3 regular enemies barely threatened anyone: a bit more HP so the road matters, not just the boss
+for _eid in ("kitsune", "kodama", "karasu_tengu", "chochin", "hitodama", "oni", "gashadokuro", "shadow_clan",
+             "possessed", "nio_guardian", "fire_ninja"):
+    ENEMIES[_eid]["hp"] = int(round(ENEMIES[_eid]["hp"] * 1.12))
+
+# items that carried runs far above comparable ones
+_tune_item("warlord_blade", dmg=(6, 9), cd=1.7)          # +30 pts: Kurogane's stage-1 legendary drop
+_tune_item("yuki_breath", stun=0.6, block=5)             # +28 pts
+_tune_item("dragon_pearl", s_regen=1, s_block=12)        # +28 pts
+_tune_item("mirror_yata", s_block=12)                    # +23 pts
+_tune_item("spite_mask", n=5)                            # +21 pts
+_tune_item("kappa_cucumber", heal=4)                     # +21 pts
+_tune_item("kiai_shout", block=3)                        # +30 pts (small sample)
+
+
+# ================================================================ v0.98 DIFFICULTY CURVE
+# You can't make choices before your first fight and only a few before the next ones, so every stage
+# ramps up floor by floor (map row 0..5) instead of starting at full strength. Stage 1 starts gentlest;
+# later stages start higher because you arrive with a real kit. (Replaces the old flat +6% per row.)
+FLOOR_RAMP = {1: (0.55, 0.70, 0.82, 0.92, 1.00, 1.06),
+              "later": (0.80, 0.88, 0.95, 1.00, 1.05, 1.10)}
+# The very first battle of a run is a warm-up: one of the weakest mobs, weaker still, with no random gear.
+FIRST_FIGHT_POOL = ("tanuki", "rogue_monk", "bandit")
+FIRST_FIGHT_SCALE = 0.6
+
+
+def floor_ramp(stage, row):
+    ramp = FLOOR_RAMP[1] if stage == 1 else FLOOR_RAMP["later"]
+    return ramp[max(0, min(row, len(ramp) - 1))]
+
+
+# the stage-1 elites still won 64% / 40% of their fights: they arrive when you've had 2-4 picks
+ENEMIES["ronin_duelist"]["hp"] = 70
+ITEMS["e_quickdraw"].update(cd=8.0)
+ENEMIES["kamaitachi"]["hp"] = 65
+
+# Orochi lost players 43% of its fights vs Ashura's 20%: its last phase (eight heads + a speed-up + a second
+# purge of Poison/Burn) was the killer. One purge now (when the fourth head wakes), a gentler final phase.
+_tune_item("e_orochi_all", cd=1.1, dmg=(4, 6))
+_tune_item("e_eight_venoms", steal_block=4)
+ENEMIES["orochi"]["phases"][1].update(speed=1.1, cleanse=False)
+ENEMIES["orochi"]["desc"] = ("The eight-headed serpent. More heads wake as it weakens; the fourth head's awakening "
+                             "purges your Poison and Burn.")
+_tune_enemy("orochi", hp=560)
+_tune_item("e_orochi_head", cd=1.5)
+_tune_enemy("orochi", hp=520)

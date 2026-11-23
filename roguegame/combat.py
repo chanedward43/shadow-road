@@ -288,7 +288,8 @@ def enemy_fighter(enemy_id, scale=1.0, stage=1, rng=None):
 def make_battle(run, enemy_id, scale=1.0, seed=0):
     """Build both sides (incl. effects one side has on the other) and return a Battle."""
     p = player_fighter(run)
-    e = enemy_fighter(enemy_id, scale, run.stage, random.Random(f"{seed}:{enemy_id}"))
+    first = getattr(run, "is_first_battle", lambda: False)()
+    e = enemy_fighter(enemy_id, scale, run.stage, None if first else random.Random(f"{seed}:{enemy_id}"))
     slow = tech_mods(run.techniques).get("enemy_slow", 0)
     if slow:
         for ci in e.items:

@@ -8,7 +8,7 @@ import random
 import time
 
 from .data import (ITEMS, CHARACTERS, STAGES, START_GOLD, BAG_SIZE, STASH_SIZE, GOLD_REWARD, RARITIES,
-                   TECHNIQUES, ROW_SCALING, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, max_level, REST_HEAL,
+                   TECHNIQUES, FIGHTS_PER_RUN, BALANCE, ENEMY_LOOT, max_level, REST_HEAL,
                    SIGNATURE_DROP_CHANCE, enemy_tier, endless_mult, BLOOD_MOON_STAGE, CONSUMABLES,
                    MAX_CONSUMABLES)
 from .inventory import Grid, ItemInst
@@ -74,6 +74,7 @@ class RunState:
         self.consumables = []    # used up in the next battle
         self.flags = {}          # multi-stage event state, e.g. {"tanuki": "helped"}
         self.stats = dict(dmg=0, items={}, battles=0)   # for the end-of-run screen
+        self.acquired = {}       # item id -> stage it was first gained (run reports; starting kit = 1)
         self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
@@ -121,7 +122,8 @@ class RunState:
 
     # ---------------- difficulty
     def enemy_scale(self, kind):
-        """Stage multiplier x enemy-type multiplier x depth (+6% per map row for non-bosses)."""
+        """Stage multiplier x enemy-type multiplier x the stage's floor ramp (non-bosses; see FLOOR_RAMP).
+        The first battle of a run is extra gentle (FIRST_FIGHT_SCALE)."""
         if self.stage > 3:
             mult = BALANCE["stage_mult"].get(3, 1.0) * endless_mult(self.stage)
         else:
@@ -136,7 +138,15 @@ class RunState:
             mult *= 1.10
         if kind == "boss" or self.pos is None:
             return mult
-        return mult * (1.0 + ROW_SCALING * self.pos[0])
+        from .data import floor_ramp, FIRST_FIGHT_SCALE
+        mult *= floor_ramp(self.stage, self.pos[0])
+        if self.is_first_battle():
+            mult *= FIRST_FIGHT_SCALE
+        return mult
+
+    def is_first_battle(self):
+        """True until the run's first battle has been fought."""
+        return self.stage == 1 and not self.stats.get("battles") and not self.battles_won
 
     def boss_id(self, stage=None):
         self.ensure_stage(stage or self.stage)
@@ -272,11 +282,15 @@ class RunState:
         if kind == "elite":
             return self.rng.choice(st["elites"])
         self.ensure_stage(self.stage)
+        if self.is_first_battle():                      # warm-up: one of the gentlest mobs
+            from .data import FIRST_FIGHT_POOL
+            return self.rng.choice(FIRST_FIGHT_POOL)
         return self.rng.choice(self.fight_pool[self.stage])
 
     def add_item(self, iid, level=1):
         """Put a new item in the stash (or bag). Returns False if nowhere fits."""
         inst = ItemInst(iid, level=level)
+        self.acquired.setdefault(iid, self.stage)
         return self.stash.first_fit(inst) or self.bag.first_fit(inst)
 
     # ---------------- levelling (merge two identical items)
@@ -397,6 +411,7 @@ class RunState:
                     self.bag.remove(a)
                     self.bag.remove(b)
                     inst = ItemInst(res, level=min(a.level, b.level))
+                    self.acquired.setdefault(res, self.stage)
                     if not any(self.bag.place(inst, x, y) for x, y in spots):
                         self.bag.first_fit(inst) or self.stash.first_fit(inst)
                     made.append((a.id, b.id, res))

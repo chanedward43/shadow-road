@@ -976,6 +976,32 @@ class TestAIFeaturesAreFutureProof(unittest.TestCase):
                 self.assertEqual(ai.item_features(iid, r)[-1], 0, f"{iid} has an effect the AI can't see")
 
 
+class TestDifficultyCurve(unittest.TestCase):
+    def test_first_battle_can_never_be_lost(self):
+        for cls in data.CHARACTERS:
+            for seed in range(120):
+                r = RunState(cls, seed)
+                r.visit(r.available_nodes()[0])
+                self.assertTrue(r.is_first_battle())
+                eid = r.pick_enemy("fight")
+                self.assertIn(eid, data.FIRST_FIGHT_POOL)
+                b = make_battle(r, eid, r.enemy_scale("fight"), seed=r.rng.randrange(1 << 30))
+                b.run_to_end()
+                self.assertEqual(b.winner, 0, f"{cls} lost the first battle on seed {seed}")
+
+    def test_each_stage_ramps_up(self):
+        for stage in (1, 2, 3, 4):
+            ramp = [data.floor_ramp(stage, row) for row in range(6)]
+            self.assertEqual(ramp, sorted(ramp), f"stage {stage} must only get harder floor by floor")
+        self.assertLess(data.floor_ramp(1, 0), data.floor_ramp(2, 0), "stage 1 starts gentlest")
+        r = RunState("ninja", 3)
+        r.stats["battles"] = 1
+        r.pos = (0, 0)
+        early = r.enemy_scale("fight")
+        r.pos = (4, 0)
+        self.assertGreater(r.enemy_scale("fight"), early)
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame

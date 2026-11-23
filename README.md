@@ -151,15 +151,36 @@ pip install pygame-ce numpy
 
 | What you want | Command | Time (roughly) |
 |---|---|---|
-| Just measure the current balance (reuse trained agents) | `python tools/balance.py --skip-train --eval 200` | 2-5 min |
-| Re-tune difficulty with the existing agents | `python tools/balance.py --skip-train --autotune --eval 200` | 10-30 min |
-| Full retrain + tune (after adding items or mechanics) | `python tools/balance.py --episodes 2000 --eval 200 --autotune --rounds 6` | 1-3 h |
-| Same, but stop at the first balanced point | add `--checkpoint` | shorter |
+| Just measure the current balance (reuse trained agents) | `python tools/balance.py --skip-train --eval 200` | 1-3 min |
+| Re-tune difficulty with the existing agents | `python tools/balance.py --skip-train --autotune --eval 200 --checkpoint` | 3-10 min |
+| Full retrain + tune | `python tools/balance.py --episodes 2000 --eval 200 --autotune --rounds 6 --checkpoint` | 15-30 min |
 
 Flags: `--episodes` = training runs per class (more = smarter agents, slower), `--eval` = test runs
 per class (more = more accurate %), `--target 0.20` = desired win rate for a skilled player,
-`--rounds` = max tuning rounds. Retrain from scratch (no `--skip-train`) whenever you change what
-the AI sees - new item stats, tags or mechanics - otherwise old agents are skipped or misjudge.
+`--rounds` = max tuning rounds, `--checkpoint` = stop at the first balanced point.
+
+**Do I need to retrain?** Usually not. The agents describe every choice by *what it does* (damage,
+Block, Poison, gold, healing, items, fights...), never by its name, so the trained agents already
+understand new content built from existing effects:
+
+| You changed... | Run |
+|---|---|
+| Numbers (damage, prices, HP, enemy stats) | `--skip-train --autotune` |
+| New items using existing effects | `--skip-train --autotune` |
+| New `?` events (tag each option in `events.FX`, e.g. `dict(gold=-10, item=3)`) | `--skip-train --autotune` |
+| New techniques made of existing modifiers | `--skip-train --autotune` |
+| A brand-new KIND of effect or rule (a new mechanic) | full retrain (it trains on top of the saved agents) |
+
+A test (`TestAIFeaturesAreFutureProof`) fails if an event option is missing its tags or an item has an
+effect the AI can't see, so you'll know when something needs a feature.
+
+**Run report (Excel, one per patch):** `python tools/run_report.py --runs 200` (or add `--report 200` to any
+`balance.py` command). The trained AI plays 200 runs per class and writes `reports/v<version>/`:
+`run_report_v<version>.xlsx` with sheets for the summary per class, every run (where it ended - stage and
+floor - what killed it, the final board, MVP item, techniques, events, recipes, spirits), every item (pick
+rate and win-rate change when a run ends holding it), every enemy (how often it kills the player and how
+much HP it costs), events and techniques - plus `wins/<class>_<seed>.png`, a picture of every winning
+board (also embedded in the workbook). Use it to tune items, enemies and events, not just class HP.
 
 **3. Read the results:** the terminal prints each round's win rate per class. Afterwards look at
 `assets/balance_report.md` (win rates, what killed runs, best/worst items) and `assets/balance.json`

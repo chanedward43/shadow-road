@@ -214,6 +214,8 @@ def main():
                     help="reuse the agents saved in assets/ai instead of training from scratch (faster re-tunes)")
     ap.add_argument("--checkpoint", action="store_true",
                     help="stop at the first balanced point: skip retraining and report that round's win rates")
+    ap.add_argument("--report", type=int, default=0, metavar="RUNS",
+                    help="afterwards, write the Excel run report (tools/run_report.py) with RUNS runs per class")
     args = ap.parse_args()
 
     def log(msg):
@@ -250,6 +252,10 @@ def main():
                  f"{args.episodes} training runs per class, {args.eval} test runs per class, "
                  f"{time.time() - t0:.0f}s total.")
     log(f"Wrote assets/balance.json and assets/balance_report.md ({time.time() - t0:.0f}s)")
+    if args.report:
+        import subprocess
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_report.py"),
+                        "--runs", str(args.report)], check=False)
 
 
 if __name__ == "__main__":

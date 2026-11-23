@@ -13,13 +13,30 @@ on strategy: which path to walk, what to buy, which loot to take, when to heal.
 import numpy as np
 
 from .data import ITEMS, RARITIES, CHARACTERS, TECHNIQUES, weapon_stamina_cost
-from .events import EVENTS
+from .events import EVENT_BY_ID, option_fx
 from .sim import STOP, play
 
+# Every feature list below is FIXED-SIZE and describes options by what they do, never by their name or
+# position in a content list. New items, events (tag their options in events.FX) and techniques (made of
+# existing modifiers) therefore don't change the shapes, and trained agents keep working - a quick
+# `balance.py --skip-train --autotune` is enough. Only a brand-new KIND of effect needs a new feature.
 KINDS = ["fight", "elite", "shop", "rest", "treasure", "event", "boss"]
+KIND_ALIAS = {"omen": "event", "soul": "event", "forge": "treasure", "bounty": "treasure", "dojo": "rest"}
 TAGS = ["weapon", "armor", "food", "poison", "fire", "charm", "tool", "scroll", "summon", "curse", "ki"]
-EVENT_OPTS = [f"{e['id']}:{i}" for e in EVENTS for i in range(len(e["options"]))]
-TECHS = [t for t, d in TECHNIQUES.items() if not d.get("endless")]   # endless ones: no feature (zeros)
+EVENT_KEYS = ["gold", "hp", "max_hp", "item", "tech", "upgrade", "fight", "risk", "forge", "future"]
+TECH_KEYS = {   # technique modifier -> typical size (features are value / size)
+    "max_hp": 15, "weapon_dmg": 2, "crit": 0.1, "evade": 0.1, "s_block": 15, "dodge": 2, "weapon_speed": 0.15,
+    "first_strike": 3, "resolve_max": 4, "item_burn": 2, "item_poison": 1, "poison_on_crit": 2,
+    "enemy_slow": 0.12, "weapon_lifesteal": 0.15, "summon_dmg": 2, "extra_summon": 1, "item_curse": 1,
+    "summon_curse": 1, "ki_max": 6, "counter": 2, "ki_start": 4, "ki_burst_bonus": 1}
+# item stat keys the item features already understand; anything else counts in a catch-all "other" slot
+KNOWN_ITEM_KEYS = {
+    "id", "name", "shape", "rarity", "tags", "cls", "price", "enemy", "loot", "recipe", "cd", "dmg", "hits",
+    "block", "heal", "poison", "burn", "stun", "dodge", "s_evade", "crit", "s_crit", "s_block", "s_hp",
+    "lifesteal", "summon", "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "per_tag", "s_crit_block",
+    "s_crit_poison", "grow", "steal_block", "cleanse", "stamina_cost", "stamina_gain", "s_stamina",
+    "s_stamina_regen", "gold_per_win", "interest", "gold_per_boss", "discount", "trigger", "n", "alone_dmg",
+    "aura", "regen", "s_regen", "s_thorns", "speed", "level", "adj", "sunder"}
 
 
 def _state(run):
@@ -52,11 +69,16 @@ def item_features(iid, run):
           d["per_tag"][1] * _tag_count(run, d["per_tag"][0]) / 5.0 if d.get("per_tag") else 0.0,
           (d.get("s_crit_block", 0) + d.get("s_crit_poison", 0)) / 3.0,
           _synergy(iid, run),
-          d.get("grow", 0) / 1.5 + d.get("steal_block", 0) / 5.0 + d.get("cleanse", 0) / 3.0,
+          d.get("grow", 0) / 1.5 + d.get("steal_block", 0) / 5.0 + d.get("cleanse", 0) / 3.0 + d.get("sunder", 0),
           (weapon_stamina_cost(d) / d["cd"]) if d.get("cd") else 0.0,
           per("stamina_gain") + d.get("s_stamina", 0) / 3.0 + d.get("s_stamina_regen", 0)]
-    f += [_economy(d), _trigger_power(d), d.get("alone_dmg", 0) / 5.0]
+    f += [_economy(d), _trigger_power(d), d.get("alone_dmg", 0) / 5.0, _other(d)]
     return np.array(f)
+
+
+def _other(d):
+    """Catch-all for effects the features don't know yet: a new mechanic still registers as 'something'."""
+    return sum(1 for k, v in d.items() if k not in KNOWN_ITEM_KEYS and v) / 2.0
 
 
 def _economy(d):
@@ -85,13 +107,14 @@ def _synergy(iid, run):
     return sum(1 for i in run.bag.items if tags & set(i.data["tags"])) / 6.0
 
 
-ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 12 + 3
+ITEM_DIM = 4 + 1 + 4 + 5 + len(TAGS) + 12 + 1 + 12 + 4
 
 
 def path_features(kind, run):
     s = _state(run)
     one = np.zeros(len(KINDS) * 4)
-    k = KINDS.index("event" if kind == "omen" else kind)   # an Omen is a story event to the AI
+    kind = KIND_ALIAS.get(kind, kind)
+    k = KINDS.index(kind) if kind in KINDS else KINDS.index("event")    # unknown node kinds read as events
     one[k * 4:(k + 1) * 4] = [1.0, *s]
     return one
 
@@ -103,27 +126,43 @@ def rest_features(choice, run):
 
 
 def event_features(label, run):
-    f = np.zeros(len(EVENT_OPTS) * 2)
-    if label not in EVENT_OPTS:              # newer events have no learned feature yet
-        return f
-    k = EVENT_OPTS.index(label)
-    f[k * 2:(k + 1) * 2] = [1.0, run.hp / max(1, run.max_hp)]
-    return f
+    """An event option described by its effects (events.FX), so any event - even a brand-new one - can be
+    judged: gold, healing (worth more when hurt), max HP, items, techniques, fights (better when healthy)..."""
+    ev = EVENT_BY_ID.get(label.rsplit(":", 1)[0])
+    fx = option_fx(label, ev)
+    hpr = run.hp / max(1, run.max_hp)
+    g = fx.get("gold", 0)
+    hp = fx.get("hp", 0)
+    fight = fx.get("fight", 0) / 2.0
+    return np.array([
+        1.0, g / 20.0, (g / 20.0) * (1.0 if run.gold < 15 else 0.5),       # gold matters more when poor
+        hp, max(hp, 0) * (1 - hpr), min(hp, 0) * (1 - hpr),                  # heals when hurt / losses when low
+        fx.get("max_hp", 0) / 10.0, fx.get("item", 0) / 4.0, fx.get("tech", 0), fx.get("upgrade", 0),
+        fight, fight * hpr, fx.get("risk", 0), fx.get("forge", 0), fx.get("future", 0),
+        1.0 if not fx else 0.0, run.stage / 3.0])
+
+
+EVENT_DIM = 17
 
 
 def tech_features(tid, run):
-    f = np.zeros(len(TECHS))
-    if tid in TECHS:
-        f[TECHS.index(tid)] = 1.0
-    return f
+    """A technique described by its modifiers (scaled to their typical size) + a catch-all for new ones."""
+    d = TECHNIQUES.get(tid, {})
+    f = [1.0] + [d.get(k, 0) / size for k, size in TECH_KEYS.items()]
+    f.append(sum(1 for k, v in d.items() if k not in TECH_KEYS and isinstance(v, (int, float))
+                 and not isinstance(v, bool)) / 2.0)
+    return np.array(f)
+
+
+TECH_DIM = 1 + len(TECH_KEYS) + 1
 
 
 FEATURES = {
     "item": (item_features, ITEM_DIM),
     "path": (path_features, len(KINDS) * 4),
     "rest": (lambda o, r: rest_features(0 if o == "heal" else 1, r), 4),
-    "event": (event_features, len(EVENT_OPTS) * 2),
-    "tech": (tech_features, len(TECHS)),
+    "event": (event_features, EVENT_DIM),
+    "tech": (tech_features, TECH_DIM),
 }
 
 
@@ -192,7 +231,8 @@ def describe_policy(agent, top=8):
              + ["aura", "dps", "block/s", "heal/s", "poison/s", "burn/s", "stun", "dodge/s", "evade", "crit",
                 "start_block+hp", "lifesteal", "heal_when_hurt", "summon_dps", "curse/s", "hex", "ki/s",
                 "ki_burst", "counter+start_curse", "per_tag_bonus", "on_crit", "synergy",
-                "grow/steal/cleanse", "stamina_use/s", "stamina_gain", "economy", "trigger_power", "alone_dmg"])
+                "grow/steal/cleanse", "stamina_use/s", "stamina_gain", "economy", "trigger_power", "alone_dmg",
+                "other_effects"])
     w = agent.w["item"]
     order = np.argsort(-np.abs(w))[:top]
     return [(names[i] if i < len(names) else str(i), round(float(w[i]), 2)) for i in order]

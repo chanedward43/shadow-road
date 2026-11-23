@@ -76,7 +76,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
     endless=True keeps going after stage 3 (until death or max_stage)."""
     run = RunState(char_id, seed, mode="endless" if endless else "story")
     out = dict(char=char_id, seed=seed, win=False, stage=1, died_to=None, battles=0,
-               encounters=[], picks=[], offered=[])
+               encounters=[], picks=[], offered=[], fights=[], events=[], recipes=[], techs_offered=[])
 
     def decide(kind, options):
         i = policy.choose(kind, options, run)
@@ -94,9 +94,15 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
         return opts[i]
 
     def battle(eid, kind):
+        hp_before = run.hp
         b = make_battle(run, eid, run.enemy_scale(kind), seed=run.rng.randrange(1 << 30))
         b.run_to_end()
         run.hp = max(0, min(run.max_hp, b.f[0].hp))
+        out["fights"].append(dict(enemy=eid, kind=kind, stage=run.stage, floor=(run.pos[0] + 1) if run.pos else 0,
+                                  won=b.winner == 0, hp_before=hp_before, hp_after=run.hp, max_hp=run.max_hp,
+                                  time=round(b.t, 1),
+                                  dealt=sum(ci.stats.get("dmg", 0) for ci in b.f[0].items),
+                                  enemy_hp=b.f[1].max_hp))
         run.after_battle(b.winner == 0, kind)
         run.record_battle(b.f[0].items)          # tsukumogami awaken in simulations too
         out["encounters"].append((eid, kind, b.winner == 0))
@@ -113,6 +119,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                 run.add_item(rolled[0], level=rolled[1])
             techs = run.technique_choices()
             if techs:
+                out["techs_offered"].extend(techs)
                 run.learn(techs[decide("tech", techs)])
             pick_item(run.reward_choices(kind), "reward")
         else:
@@ -164,6 +171,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
             valid = [(i, o) for i, o, ok in options_for(run, ev) if ok]
             labels = [f"{ev['id']}:{i}" for i, _ in valid]
             choice = valid[decide("event", labels)][0]
+            out["events"].append(f"{ev['id']}:{choice}")
             res = resolve(run, ev, choice)
             if res.get("battle"):
                 if not battle(*res["battle"]):
@@ -175,9 +183,20 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                 if auto_infuse(run, run.rng):
                     pay_forge(run, res["forge"])
         pack(run)
-        if run.combine_recipes():
+        made = run.combine_recipes()
+        if made:
+            out["recipes"].extend(res for _, _, res in made)
             pack(run)
     out["stage"] = run.stage
+    out["floor"] = (run.pos[0] + 1) if run.pos else 0
+    out["death_kind"] = out["fights"][-1]["kind"] if out["fights"] and not out["win"] else None
+    out["gold_earned"] = run.gold_earned
+    out["max_hp"] = run.max_hp
+    out["kit"] = run.bag.to_dict()
+    out["item_dmg"] = dict(run.stats.get("items", {}))
+    out["awakened"] = [(i.id, i.awakened) for i in run.all_items() if i.awakened]
+    out["infused"] = [(i.id, i.infusion["src"]) for i in run.all_items() if i.infusion]
+    out["path"] = [p["kind"] for p in run.path]
     out["battles"] = run.battles_won
     out["final_kit"] = [(i.id, i.level) for i in run.bag.items]
     out["techniques"] = list(run.techniques)

@@ -9,3 +9,5 @@ had.zip
 web_build/
 .claude/
 assets/icons/
+
+reports/*/wins/

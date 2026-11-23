@@ -441,7 +441,7 @@ def omen_event(run, key):
     om = OMENS[key]
     out = om["outcomes"][run.flags[key]]
     run.flags[key + "_done"] = True
-    return dict(id=f"omen_{key}", title=out["title"], art=om["art"], text=out["text"], new=True,
+    return dict(id=f"omen_{key}_{run.flags[key]}", title=out["title"], art=om["art"], text=out["text"], new=True,
                 options=[dict(label=out["label"], do=out["do"])])
 
 
@@ -504,3 +504,46 @@ def auto_infuse(run, rng):
                     g.remove(src)
                 return src, dst
     return None
+
+
+# ================================================================ what each option DOES (for the AI)
+# The learning agent judges event options by these effect tags, not by name, so new events don't
+# require retraining - just tag their options here (or with fx=dict(...) on the option itself).
+#   gold   - expected ryō change          hp      - HP change as a fraction of max (+heal / -loss)
+#   max_hp - max HP change (absolute)     item    - item gained: 1 common .. 4 legendary (expected)
+#   tech   - +1 learn / -1 forget a technique         upgrade - chance an item levels up
+#   fight  - 1 mob, 2 elite, 2.5 very hard            risk    - chance it goes badly
+#   forge  - opens the Soul Forge         future  - +1 a good omen later / -1 a bad one
+FX = {
+    "monk:0": dict(gold=-8, tech=1), "monk:1": dict(hp=0.25),
+    "fox_wedding:0": dict(hp=-0.12, item=2), "fox_wedding:1": dict(max_hp=6),
+    "smith:0": dict(gold=-10, upgrade=1), "smith:1": dict(gold=7),
+    "bridge:0": dict(fight=2), "bridge:1": dict(hp=-0.12),
+    "tea_house:0": dict(gold=-5, hp=0.3), "tea_house:1": dict(gold=3.5, risk=0.5),
+    "cursed_shrine:0": dict(max_hp=-10, item=3.5), "cursed_shrine:1": dict(hp=0.15),
+    "sumo:0": dict(fight=2, item=3),
+    "battlefield:0": dict(item=1.5, fight=0.4, risk=0.4),
+    "ronin:0": dict(fight=2, item=3),
+    "monkeys:0": dict(hp=0.2, max_hp=3), "monkeys:1": dict(hp=-0.06, item=1),
+    "caravan:0": dict(gold=-12, item=3),
+    "well:0": dict(hp=0.07, risk=0.5), "well:1": dict(gold=-3, upgrade=0.5),
+    "blood_pact:0": dict(max_hp=-10, item=3.5), "blood_pact:1": dict(hp=-0.3, gold=25),
+    "champion:0": dict(fight=2.5, item=4),
+    "forgetful_monk:0": dict(tech=-1, gold=40),
+    "high_stakes:0": dict(risk=1.0),
+    "veiled_merchant:0": dict(gold=-15, item=1.6, risk=0.6),
+    "tanuki_trap:0": dict(hp=-0.05, future=1), "tanuki_trap:1": dict(gold=10, future=-1),
+    "wounded_ronin:0": dict(gold=-8, future=1), "wounded_ronin:1": dict(item=3, future=-1),
+    "soul_forge:0": dict(gold=-12, forge=1), "soul_forge:1": dict(max_hp=-8, forge=1),
+    "omen_tanuki_helped:0": dict(gold=12, item=3.5), "omen_tanuki_robbed:0": dict(fight=2),
+    "omen_ronin_saved:0": dict(item=3, hp=0.3), "omen_ronin_robbed:0": dict(fight=2),
+}
+
+
+def option_fx(label, ev=None):
+    """Effect tags for an option label 'event_id:index' ({} = nothing happens, e.g. Leave)."""
+    if ev is not None:
+        i = int(label.rsplit(":", 1)[1])
+        if ev["options"][i].get("fx") is not None:
+            return ev["options"][i]["fx"]
+    return FX.get(label, {})

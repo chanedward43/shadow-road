@@ -928,6 +928,54 @@ class TestSpirits(unittest.TestCase):
         self.assertIsNotNone(got)
 
 
+class TestAIFeaturesAreFutureProof(unittest.TestCase):
+    """The agents describe options by what they do, so adding content never changes feature sizes."""
+
+    def setUp(self):
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy not installed")
+
+    def test_shapes_are_fixed(self):
+        from roguegame import ai
+        from roguegame.events import EVENTS, EVENT_BY_ID
+        r = RunState("onmyoji", 1)
+        dims = {k: d for k, (_, d) in ai.FEATURES.items()}
+        fake = dict(id="test_event", title="t", text="t", options=[dict(label="x", do=lambda r, g: {},
+                                                                         fx=dict(gold=5, item=2))])
+        EVENTS.append(fake)
+        EVENT_BY_ID["test_event"] = fake
+        data.TECHNIQUES["test_tech"] = dict(cls="onmyoji", name="t", desc="t", crit=0.1, brand_new_mod=3)
+        try:
+            self.assertEqual(len(ai.event_features("test_event:0", r)), dims["event"])
+            self.assertEqual(len(ai.tech_features("test_tech", r)), dims["tech"])
+            self.assertGreater(ai.tech_features("test_tech", r)[-1], 0, "unknown modifiers still register")
+            self.assertEqual(len(ai.path_features("some_new_node", r)), dims["path"])
+            for iid in list(data.ITEMS)[:40]:
+                self.assertEqual(len(ai.item_features(iid, r)), dims["item"])
+        finally:
+            EVENTS.remove(fake)
+            del EVENT_BY_ID["test_event"]
+            del data.TECHNIQUES["test_tech"]
+
+    def test_every_event_option_is_tagged(self):
+        from roguegame.events import EVENTS, option_fx
+        for e in EVENTS:
+            for i, o in enumerate(e["options"]):
+                label = f"{e['id']}:{i}"
+                with self.subTest(option=label):
+                    is_leave = o["do"].__name__ in ("leave", "do")      # do = leave_flag(...)
+                    self.assertTrue(is_leave or option_fx(label, e), "tag this option in events.FX")
+
+    def test_current_items_need_no_catch_all(self):
+        from roguegame import ai
+        r = RunState("samurai", 1)
+        for iid, d in data.ITEMS.items():
+            if not d["enemy"]:
+                self.assertEqual(ai.item_features(iid, r)[-1], 0, f"{iid} has an effect the AI can't see")
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame

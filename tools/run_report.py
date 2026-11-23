@@ -418,6 +418,18 @@ def main():
     out = os.path.join(out_dir, f"run_report_v{VERSION}.xlsx")
     build_workbook(runs, out, board_dir, embed_boards=not a.no_images)
     print(f"Wrote {out}")
+    prune_old_reports(os.path.basename(out_dir))
+
+
+def prune_old_reports(keep):
+    """Only the newest patch's report is kept: older reports/v* folders are deleted (git history still has them)."""
+    import shutil
+    base = os.path.join(ROOT, "reports")
+    for name in os.listdir(base):
+        path = os.path.join(base, name)
+        if name != keep and name.startswith("v") and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"Removed old report {name}")
 
 
 if __name__ == "__main__":

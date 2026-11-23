@@ -184,7 +184,8 @@ effect the AI can't see, so you'll know when something needs a feature.
 floor - what killed it, the final board, MVP item, techniques, events, recipes, spirits), every item (pick
 rate and win-rate change when a run ends holding it), every enemy (how often it kills the player and how
 much HP it costs), events and techniques - plus `wins/<class>_<seed>.png`, a picture of every winning
-board (also embedded in the workbook). Use it to tune items, enemies and events, not just class HP.
+board (also embedded in the workbook). Only the newest patch's report is kept: writing a new one deletes the
+older `reports/v*` folders (they stay in git history). Use it to tune items, enemies and events, not just class HP.
 
 **3. Read the results:** the terminal prints each round's win rate per class. Afterwards look at
 `assets/balance_report.md` (win rates, what killed runs, best/worst items) and `assets/balance.json`

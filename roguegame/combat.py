@@ -356,6 +356,11 @@ class Battle:
         self.log = []                # one entry per item activation: dict(t, side, name, id, delta)
         self.totals = [{}, {}]       # damage each side dealt through statuses (poison, burn, thorns...)
         self._pending = []           # triggered items waiting to fire: (side, CItem)
+        # what happened, for the after-fight debrief
+        self.taken = [{}, {}]        # HP each side lost, by source (item name / Poison / Burn / ...)
+        self.stunned = [0.0, 0.0]    # seconds each side spent stunned
+        self.healed = [0, 0]
+        self.absorbed = [0, 0]       # damage each side's Block soaked up
         self._cur = None             # the item currently activating (credited with its effects)
         self._cur_side = None
 
@@ -381,7 +386,14 @@ class Battle:
             absorbed = min(tgt.block, amount - min(pierce_amt, amount))
             tgt.block -= absorbed
             amount -= absorbed
+            self.absorbed[side] += absorbed
+            if absorbed and self._cur is not None and side != self._cur_side:
+                self._credit("blocked", absorbed)
         tgt.hp -= amount
+        if amount > 0:
+            src = self._cur.name if (self._cur is not None and side != self._cur_side) else \
+                {"summon": "Shikigami", "hit": "Attacks"}.get(kind, kind.title())
+            self.taken[side][src] = self.taken[side].get(src, 0) + amount
         self._emit(kind, side, amount, crit)
         return amount
 
@@ -392,6 +404,7 @@ class Battle:
             if self._cur is not None and side == self._cur_side:
                 self._credit("heal", amount)
             f.hp += amount
+            self.healed[side] += amount
             self._emit("heal", side, amount)
             f.heals += 1
             self._count_trigger(side, "heal_count", f.heals)
@@ -638,6 +651,8 @@ class Battle:
                     self._heal(side, int(ph["heal"] * sc))
                 f.phase_msg = ph["msg"]
                 self._emit("phase", side, text=ph["msg"])
+                self.log.append(dict(t=round(self.t, 2), side=side, name=f.name.split(",")[0], id=None,
+                                     delta={"phase": ph["msg"]}))
 
     def _tick(self):
         dt = TICK
@@ -647,6 +662,7 @@ class Battle:
             f.stun_immune = max(0.0, f.stun_immune - dt)
             if f.stun_t > 0:
                 f.stun_t -= dt
+                self.stunned[side] += dt
                 for ci in f.items:
                     ci.flash = max(0.0, ci.flash - dt)
                 continue

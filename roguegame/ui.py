@@ -110,7 +110,7 @@ def font(size, bold=False, italic=False):
     return _fonts[key]
 
 
-def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=2):
+def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=4):
     """Like text_block, but effect keywords (Poison, Burn, Block...) are drawn in their own colour, in italics."""
     from .keywords import KEYWORDS, keyword_of
     x0, y = pos
@@ -172,7 +172,7 @@ def wrap(s, size, width, bold=False):
     return lines
 
 
-def text_block(surf, s, pos, width, size=16, col=TEXT, spacing=2, bold=False):
+def text_block(surf, s, pos, width, size=16, col=TEXT, spacing=4, bold=False):
     x, y = pos
     for line in wrap(s, size, width, bold):
         text(surf, line, (x, y), size, col, bold)
@@ -320,7 +320,10 @@ def draw_item(surf, iid, shape, ox, oy, cell, alpha=230, highlight=None, level=1
     gsize = min(bw, bh) * 0.62
     _glyph(layer, GLYPH.get(tag, tag), (bw / 2, bh / 2), gsize, LINE_COL.get(tag, TEXT))
     surf.blit(layer, (ox, oy))
-    if cell < 50 and bw <= cell:            # too small for a readable name: the tooltip has it
+    if cell < 50 and bw <= cell:            # small cell: a short label (the tooltip has the full name)
+        word = d["name"].split()[0][:7]
+        text(surf, word, (ox + bw / 2 + 1, oy + bh - 9), 10, (0, 0, 0), True, center=True)
+        text(surf, word, (ox + bw / 2, oy + bh - 10), 10, TEXT, True, center=True)
         draw_level(surf, level, ox, oy, cell)
         return
     # name, with a dark shadow so it reads on top of the line art
@@ -358,7 +361,7 @@ def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=
     d = ITEMS[iid]
     rect = pygame.Rect(rect)
     layer = pygame.Surface((rect.width, 900), pygame.SRCALPHA)
-    x, y, wdt = 14, 10, rect.width - 28
+    x, y, wdt = 18, 14, rect.width - 36
     name = eff.get("name", d["name"]) if eff else d["name"]
     lvl = eff.get("level", 1) if eff else 1
     text(layer, name if lvl <= 1 else f"{d['name']}  (level {lvl})", (x, y), 22, RARITY_COL[d["rarity"]], True)
@@ -373,7 +376,7 @@ def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=
     y += 24
     lines = tooltip_lines(iid, eff)
     for ln in lines:
-        y = rich_text_block(layer, ln, (x, y), wdt, 16)
+        y = rich_text_block(layer, ln, (x, y), wdt, 16, spacing=5)
     if eff is not None and eff.get("speed", 1.0) != 1.0:
         y = text_block(layer, f"(speed boosted x{eff['speed']:.2f} by neighbours)", (x, y), wdt, 14, GREEN)
     if fight_stats:

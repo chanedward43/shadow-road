@@ -75,6 +75,8 @@ class RunState:
         self.flags = {}          # multi-stage event state, e.g. {"tanuki": "helped"}
         self.stats = dict(dmg=0, items={}, battles=0)   # for the end-of-run screen
         self.acquired = {}       # item id -> stage it was first gained (run reports; starting kit = 1)
+        self.play_time = 0.0     # seconds actually played (the clock pauses on menus / when closed)
+        self.stage_times = []    # seconds spent in each finished stage
         self.seed = seed if seed is not None else fresh_seed()
         self.rng = random.Random(self.seed)
         self.char_id = char_id
@@ -191,6 +193,7 @@ class RunState:
         return self.node(rc)
 
     def next_stage(self):
+        self.stage_times.append(round(self.play_time - sum(self.stage_times), 1))
         self.stage += 1
         self.ensure_stage(self.stage)
         if self.stage >= 4:                              # Second Wind (endless)

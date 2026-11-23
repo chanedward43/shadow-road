@@ -14,6 +14,9 @@ from roguegame import ui, settings, audio
 from roguegame.scenes import TitleScene
 
 WEB = sys.platform == "emscripten"
+# screens where the run clock doesn't tick (menus, end screens)
+IDLE_SCENES = {"TitleScene", "CharSelectScene", "MatchHistoryScene", "AchievementsScene", "SettingsScene",
+               "CompendiumScene", "ArenaLobbyScene", "EndScene", "ArenaEndScene"}
 
 
 class Game:
@@ -89,6 +92,8 @@ class Game:
                     self.touch = True
                 self.scene.handle(ev)
         self.scene.update(dt)
+        if self.run is not None and type(self.scene).__name__ not in IDLE_SCENES:
+            self.run.play_time = getattr(self.run, "play_time", 0.0) + dt     # the run clock
         audio.update()
         self.scene.draw(self.screen)
         self.draw_mute()

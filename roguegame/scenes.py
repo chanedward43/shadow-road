@@ -81,8 +81,11 @@ def top_bar(s, run, title=""):
         r = text(s, f"{label} - {st['name']}", (460, 11), 20, col, True)
         if run.asc:
             text(s, f"A{run.asc}", (r.right + 12, 11), 20, (200, 140, 255), True)
+    clock = fmt_clock(getattr(run, "play_time", 0))
     if title:
-        text(s, title, (W - 174, 11), 20, ui.DIM, True, right=True)
+        text(s, f"{title}   {clock}", (W - 174, 11), 20, ui.DIM, True, right=True)
+    else:
+        text(s, clock, (W - 174, 11), 20, ui.DIM, True, right=True)
 
 
 def draw_hearts(s, pos, n, total=None, size=9):
@@ -95,6 +98,13 @@ def draw_hearts(s, pos, n, total=None, size=9):
         pygame.draw.circle(s, col, (cx - size // 2, y - size // 3), size // 2 + 1)
         pygame.draw.circle(s, col, (cx + size // 2, y - size // 3), size // 2 + 1)
         pygame.draw.polygon(s, col, [(cx - size, y - size // 4), (cx + size, y - size // 4), (cx, y + size)])
+
+
+def fmt_clock(secs):
+    secs = int(secs or 0)
+    h, rest = divmod(secs, 3600)
+    m, sec = divmod(rest, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
 def run_music(game):
@@ -127,6 +137,72 @@ def draw_petals(s, t, n=45):
         x = (i * 137 + t * (14 + i % 5) * 3) % W
         y = (i * 89 + t * (18 + i % 7) * 3) % H
         pygame.draw.ellipse(s, (230, 150, 180) if i % 3 else (190, 110, 140), (int(x), int(y), 6, 4))
+
+
+def battle_numbers(run, inst):
+    """What an item really does in battle with your whole kit: cooldown, damage per second, crit chance..."""
+    from .combat import player_fighter
+    try:
+        f = player_fighter(run)
+    except Exception:            # noqa: BLE001
+        return ""
+    ci = next((c for c in f.items if c.uid == inst.uid), None)
+    parts = []
+    if ci is not None:
+        st = ci.st
+        crit = min(1.0, f.crit + st.get("crit", 0))
+        if st.get("trigger"):
+            parts.append("fires on its trigger")
+        else:
+            parts.append(f"acts every {ci.cd:.2f}s")
+        if st.get("dmg"):
+            avg = (st["dmg"][0] + st["dmg"][1]) / 2 * st.get("hits", 1)
+            if not st.get("trigger"):
+                parts.append(f"~{avg * (1 + crit) / ci.cd:.1f} dmg/s")
+            parts.append(f"{int(round(crit * 100))}% crit (x2)")
+        if ci.cost:
+            parts.append(f"{ci.cost:g} Stamina/swing")
+        if st.get("block") and not st.get("trigger"):
+            parts.append(f"{st['block'] / ci.cd:.1f} Block/s")
+        if st.get("heal") and not st.get("trigger"):
+            parts.append(f"{st['heal'] / ci.cd:.1f} heal/s")
+    else:
+        d = inst.data
+        gives = [k for k in ("s_block", "s_hp", "s_regen", "s_thorns", "s_crit", "s_evade") if d.get(k)]
+        if gives:
+            parts.append(f"passive: your crit {int(round(f.crit * 100))}%, evade {int(round(min(0.6, f.evade) * 100))}%")
+    return ("In battle: " + ", ".join(parts) + ".") if parts else ""
+
+
+def level_preview(inst):
+    """(old lines, new lines) for an item and the same item one level higher (spirits included)."""
+    from .data import describe_stats
+    nxt = ItemInst(inst.id, rot=inst.rot, level=inst.level + 1)
+    nxt.infusion, nxt.awakened = inst.infusion, inst.awakened
+    return describe_stats(inst.data), describe_stats(nxt.data)
+
+
+def draw_level_compare(s, inst, area, title=None):
+    """Two columns, now vs next level; lines that change are highlighted in the new column."""
+    old, new = level_preview(inst)
+    panel(s, area, (26, 24, 34), ui.GOLD, radius=8)
+    head = title or f"{ITEMS[inst.id]['name']}:  level {inst.level}  ->  level {inst.level + 1}"
+    text(s, head, (area.x + 16, area.y + 10), 18, ui.GOLD, True)
+    colw = (area.width - 48) // 2
+    for col, (label, lines, fresh) in enumerate((("Now", old, False), ("After", new, True))):
+        x = area.x + 16 + col * (colw + 16)
+        y = area.y + 40
+        text(s, label, (x, y), 14, ui.GREEN if fresh else ui.DIM, True)
+        y += 22
+        for ln in lines:
+            changed = fresh and ln not in old
+            if changed:
+                hl = pygame.Rect(x - 4, y - 1, colw, ui.font(15).get_height() + 2)
+                pygame.draw.rect(s, (40, 70, 40), hl, border_radius=4)
+            y = ui.rich_text_block(s, ln, (x, y), colw - 8, 15, (150, 255, 150) if changed else
+                                   (ui.TEXT if fresh else ui.DIM), spacing=4)
+            if y > area.bottom - 10:
+                break
 
 
 # =================================================================== title
@@ -270,7 +346,7 @@ class CharSelectScene(Scene):
             hp = int(round(ch["hp"] * BALANCE.get("class_hp", {}).get(cid, 1.0)))
             text(s, f"HP {hp}", (r.centerx, y), 16, ui.RED, True, center=True)
             y += 20
-            y = text_block(s, ch["passive"], (r.x + 12, y), r.width - 24, 13, ui.GOLD) + 6
+            y = text_block(s, ch["passive"], (r.x + 12, y), r.width - 24, 13, ui.GOLD, spacing=2) + 6
             text(s, "Starting kit:", (r.x + 12, y), 13, ui.TEXT, True)
             y += 18
             for iid in ch["start"]:
@@ -281,8 +357,8 @@ class CharSelectScene(Scene):
             y += 18
             for b in BUILDS.get(cid, []):
                 name, _, rest = b.partition(":")
-                y = text_block(s, name, (r.x + 12, y), r.width - 24, 13, ui.GREEN, bold=True)
-                y = text_block(s, rest.strip(), (r.x + 12, y), r.width - 24, 12, ui.DIM) + 4
+                y = text_block(s, name, (r.x + 12, y), r.width - 24, 13, ui.GREEN, bold=True, spacing=2)
+                y = text_block(s, rest.strip(), (r.x + 12, y), r.width - 24, 12, ui.DIM, spacing=1) + 4
         self.draw_buttons(s)
 
 
@@ -404,6 +480,8 @@ class MapScene(Scene):
             g.change(EventScene(g, arena.pick_floor_event(run), after=back))
         elif kind == "soul":
             g.change(SoulForgeScene(g, None, back))
+        elif kind == "forge":
+            g.change(UpgradePickScene(g, back, "The forge: choose an item to level up"))
         else:                                        # forge / bounty / dojo
             g.toast(arena.resolve_floor(run, kind), ui.GOLD, 4)
             audio.play("event")
@@ -541,8 +619,9 @@ class InventoryScene(Scene):
         if mode == "shop":
             self.reroll_btn = Button((850, 228, 180, 44), "", self.reroll, 18)
             self.buttons.append(self.reroll_btn)
-        self.buttons += [Button((850, 92, 200, 40), "Auto-arrange", self.auto_arrange, 17),
-                         Button((1060, 92, 200, 40), "Merge all", self.merge_all, 17)]
+        self.buttons += [Button((850, 92, 133, 40), "Auto-arrange", self.auto_arrange, 16),
+                         Button((990, 92, 133, 40), "Merge all", self.merge_all, 16),
+                         Button((1130, 92, 130, 40), "Recipes", self.open_recipes, 16)]
         self.undo = None                      # last Shift+click sale, undoable for a few seconds
         self.undo_btn = Button((470, 616, 200, 32), "Undo sell", self.undo_sell, 15)
         self.rotate_btn = Button((W - 230, H - 70, 210, 52), "Rotate (R)", self.rotate_held, 20)
@@ -631,6 +710,11 @@ class InventoryScene(Scene):
     def auto_arrange(self):
         pack(self.run, merge=False)
         self.say("Arranged: best items in your kit, aura items next to what they boost.")
+
+    def open_recipes(self):
+        if self.held:
+            self.return_held()
+        self.game.change(RecipeBookScene(self.game, back=self))
 
     def merge_all(self):
         n = self.run.auto_merge()
@@ -888,8 +972,10 @@ class InventoryScene(Scene):
             if inst:
                 in_bag = hit[0] is run.bag
                 from .spirit import describe
+                nums = battle_numbers(run, inst) if in_bag else ""
                 hover_tip = (inst.id, eff.get(inst.uid) if in_bag else inst.data, None,
-                             describe(inst) if in_bag else "In travel chest: NOT used in battle. " + describe(inst))
+                             (nums + " " + describe(inst)).strip() if in_bag
+                             else "In travel chest: NOT used in battle. " + describe(inst))
                 from .data import max_level
                 if inst.level < max_level(inst.data):
                     hover_tip = hover_tip[:3] + ((hover_tip[3] + " " if hover_tip[3] else "")
@@ -1013,6 +1099,11 @@ class InventoryScene(Scene):
 
         if self.held:
             inst = self.held["inst"]
+            hit_m = self.grid_at(mouse)
+            other = hit_m[0].item_at(hit_m[2], hit_m[3]) if hit_m else None
+            if other is not None and self.run.can_merge(other, inst):        # merge preview: now vs next level
+                draw_level_compare(s, other, pygame.Rect(850, 290, 410, 330),
+                                   f"Merge: level {other.level} -> {other.level + 1}")
             tgt = self.drop_target(mouse)
             if tgt:
                 grid, o, gx, gy = tgt
@@ -1145,8 +1236,11 @@ def fight_stat_lines(st):
 
 def short_delta(delta):
     parts = []
+    if "phase" in delta:
+        return delta["phase"]
     if "dmg" in delta:
-        parts.append(f"{delta['dmg']} dmg" + (" CRIT" if delta.get("crits") else ""))
+        blocked = f" ({delta['blocked']} blocked)" if delta.get("blocked") else ""
+        parts.append(f"{delta['dmg']} dmg" + (" CRIT" if delta.get("crits") else "") + blocked)
     for key, fmt in (("block", "+{} Block"), ("heal", "+{} heal"), ("poison", "+{} Poison"), ("burn", "+{} Burn"),
                      ("curse", "+{} Curse"), ("steal", "Steal {}"), ("ki", "+{} Ki"), ("dodge", "+{} Dodge"),
                      ("regen", "+{} Regen"), ("summons", "+Shikigami")):
@@ -1532,6 +1626,7 @@ class BattleScene(Scene):
             lab = text(s, f"Stamina {f.stamina:.1f}/{f.max_stamina:g}", (sr.right + 8, r.y + 129), 14,
                        (120, 230, 200), True)
             self.status_hits.append((sr.union(lab), "stamina"))
+        self.draw_traits(s, side, x, r.y + 156)
         if f.stun_t > 0:
             rr = text(s, "STUNNED", (x + 330, r.y + 112), 16, ui.GOLD, True)
             self.status_hits.append((rr, "stun"))
@@ -1539,7 +1634,7 @@ class BattleScene(Scene):
             g = self.ghost_rec
             who = "AI ghost" if g.get("bot") else "Player ghost"
             text_block(s, f"{who}  -  {CHARACTERS[g['cls']]['name']}  -  {g['wins']} wins, {g['losses']} losses "
-                          f"when they reached round {g['round']}", (r.x + 20, r.y + 172), r.width - 40, 14,
+                          f"when they reached round {g['round']}", (r.x + 20, r.y + 184), r.width - 40, 14,
                        (210, 150, 150))
         elif side == 1:
             desc = ENEMIES[self.enemy_id].get("desc")
@@ -1547,7 +1642,7 @@ class BattleScene(Scene):
                 text_block(s, desc, (r.x + 20, r.y + 172), r.width - 40, 14, (210, 150, 150))
         tip = self.draw_kit(s, side, f, (r.x + 20, r.y + 228), mouse)
         if side == 0:
-            self.draw_log(s, pygame.Rect(r.x + 318, r.y + 220, r.width - 338, 325))
+            self.draw_log(s, pygame.Rect(r.x + 318, r.y + 220, r.width - 338, 325), side=0, title="YOUR LOG")
         # phase markers on the HP bar
         for ph in f.phases:
             if not ph["done"]:
@@ -1555,8 +1650,35 @@ class BattleScene(Scene):
                 pygame.draw.line(s, ui.GOLD, (px, r.y + 56), (px, r.y + 90), 3)
                 text(s, "PHASE", (px, r.y + 46), 11, ui.GOLD, True, center=True)
         if side == 1:
-            self.draw_intents(s, f, pygame.Rect(r.x + 20, r.y + 390, r.width - 40, 155))
+            self.draw_log(s, pygame.Rect(r.x + 20, r.y + 390, r.width - 40, 155), side=1, title="ENEMY LOG")
+            nxt = next((ph for ph in f.phases if not ph["done"]), None)
+            if nxt:
+                text(s, f"Transforms at {int(f.max_hp * nxt['at'])} HP", (r.right - 30, r.y + 396), 13, ui.GOLD, True,
+                     right=True)
         return tip
+
+    def draw_traits(self, s, side, x, y):
+        """Class passive + every technique as small chips (hover one to read it)."""
+        if side == 0:
+            cls, techs = self.run.char_id, self.run.techniques
+        elif self.ghost is not None:
+            cls, techs = self.ghost.char_id, self.ghost.techniques
+        else:
+            return
+        chips = [("Passive", CHARACTERS[cls]["passive"], (235, 195, 95))] + \
+                [(TECHNIQUES[t]["name"], TECHNIQUES[t]["desc"], ui.GREEN) for t in techs]
+        cx = x
+        for name, desc, col in chips:
+            w = ui.font(12, True).size(name)[0] + 14
+            if cx + w > x + 410:
+                text(s, f"+{len(chips) - chips.index((name, desc, col))}", (cx, y + 3), 12, ui.DIM, True)
+                break
+            r = pygame.Rect(cx, y, w, 22)
+            pygame.draw.rect(s, (40, 36, 50), r, border_radius=5)
+            pygame.draw.rect(s, col, r, 1, border_radius=5)
+            text(s, name, (r.x + 7, r.y + 3), 12, col, True)
+            self.trait_hits.append((r, name, desc, col))
+            cx = r.right + 6
 
     def draw_kit(self, s, side, f, origin, mouse):
         """The fighter's real kit: item art, a cooldown sweep, a flash on activation, and use counts."""
@@ -1617,15 +1739,20 @@ class BattleScene(Scene):
                     tip = (inst.id, inst.data if side == 1 else self.eff_stats.get(inst.uid, inst.data), None)
         return tip
 
-    def draw_log(self, s, area):
-        """Activation-by-activation log for both sides (newest at the bottom)."""
-        panel(s, area, (26, 24, 34), ui.LINE, radius=6)
-        text(s, "BATTLE LOG", (area.x + 10, area.y + 6), 14, ui.DIM, True)
-        lh = 17
+    def draw_log(self, s, area, side=None, title="BATTLE LOG"):
+        """Activation-by-activation log (newest at the bottom): every number, so a fight can be worked out."""
+        panel(s, area, (26, 24, 34), (120, 50, 50) if side == 1 else ui.LINE, radius=6)
+        text(s, title, (area.x + 10, area.y + 6), 14, (230, 150, 150) if side == 1 else ui.DIM, True)
+        lh = 18
         rows = (area.height - 30) // lh
         y = area.y + 28
-        for e in self.battle.log[-rows:]:
+        entries = [e for e in self.battle.log if side is None or e["side"] == side]
+        for e in entries[-rows:]:
             who = (150, 200, 255) if e["side"] == 0 else (240, 140, 140)
+            if "phase" in e["delta"]:
+                text(s, f"{e['t']:5.1f}  {e['delta']['phase']}", (area.x + 8, y), 13, ui.GOLD, True)
+                y += lh
+                continue
             text(s, f"{e['t']:5.1f}", (area.x + 8, y), 12, ui.DIM)
             name = e["name"] if len(e["name"]) <= 16 else e["name"][:15] + "."
             nr = text(s, name, (area.x + 46, y), 13, who, True)
@@ -1654,25 +1781,61 @@ class BattleScene(Scene):
              center=True)
         text(s, f"Fight time {self.battle.t:.1f}s   -   {len(self.battle.log)} activations", (r.centerx, r.y + 76), 15,
              ui.DIM, center=True)
+        self.draw_debrief(s, pygame.Rect(r.x + 20, r.y + 96, r.width - 40, 74))
         for side, (f, title) in enumerate(((self.pf, "Your items"), (self.ef, self.ef.name))):
             cx = r.x + 24 + side * 430
-            text(s, title, (cx, r.y + 100), 18, (150, 200, 255) if side == 0 else (240, 140, 140), True)
+            text(s, title, (cx, r.y + 176), 18, (150, 200, 255) if side == 0 else (240, 140, 140), True)
             items = sorted(f.items, key=lambda ci: (-ci.stats.get("dmg", 0), -sum(ci.stats.values())))
-            y = r.y + 128
-            for ci in items[:10]:
+            y = r.y + 200
+            for ci in items[:8]:
                 pic = ui.art(ci.st["id"], 22)
                 if pic:
                     s.blit(pic, pic.get_rect(center=(cx + 11, y + 10)))
                 text(s, ci.name[:20], (cx + 28, y + 1), 14, ui.TEXT, True)
                 text(s, f"x{ci.stats.get('uses', 0)}", (cx + 200, y + 1), 13, ui.GOLD, True)
-                ui.rich_text_block(s, short_delta({k: v for k, v in ci.stats.items() if k != "uses"}),
-                                   (cx + 238, y + 1), 170, 13, ui.TEXT)
-                y += 26
+                what = short_delta({k: v for k, v in ci.stats.items() if k != "uses"}) if ci.stats.get("uses") \
+                    else "never fired"
+                end = ui.rich_text_block(s, what, (cx + 238, y + 1), 170, 13, ui.TEXT, spacing=2)
+                y = max(y + 26, end + 6)                       # long rows wrap instead of overlapping
             tot = {k: v for k, v in self.battle.totals[side].items() if k != "fatigue"}
             if tot:
                 ui.rich_text_block(s, "Over time: " + ", ".join(f"{v} {k.title()}" for k, v in tot.items()) +
                                    " damage", (cx, r.bottom - 34), 400, 13, ui.DIM)
 
+
+    def draw_debrief(self, s, area):
+        """Why the fight went the way it did: what hurt you most, stuns, healing, Block, damage left on the table."""
+        b = self.battle
+        panel(s, area, (34, 30, 44), ui.LINE, radius=6)
+        me, foe = self.pf, self.ef
+        won = b.winner == 0
+        hurt = sorted(b.taken[0].items(), key=lambda kv: -kv[1])[:3]
+        hurt_txt = ", ".join(f"{k} {v}" for k, v in hurt) or "nothing"
+        dealt = foe.max_hp - max(0, foe.hp)
+        if won:
+            l1 = f"You won with {max(0, me.hp)}/{me.max_hp} HP left. What hurt most: {hurt_txt}."
+        else:
+            l1 = (f"{foe.name.split(',')[0]} survived with {max(0, foe.hp)}/{foe.max_hp} HP "
+                  f"({dealt} dealt). What hurt you most: {hurt_txt}.")
+        facts = []
+        if b.stunned[0] >= 0.5:
+            facts.append(f"you were stunned {b.stunned[0]:.1f}s")
+        if b.healed[1]:
+            facts.append(f"enemy healed {b.healed[1]}")
+        if b.absorbed[1]:
+            facts.append(f"enemy Block soaked {b.absorbed[1]} of your damage")
+        if b.absorbed[0]:
+            facts.append(f"your Block soaked {b.absorbed[0]}")
+        waits = sum(1 for ci in me.items if ci.waiting)
+        if b.fatigue:
+            facts.append(f"fatigue reached {b.fatigue}/s")
+        if not won and me.curse:
+            facts.append(f"Curse cut your damage by {int(min(0.5, me.curse * 0.05) * 100)}%")
+        if not won and waits:
+            facts.append(f"{waits} weapon(s) were waiting for Stamina")
+        ui.rich_text_block(s, l1, (area.x + 12, area.y + 10), area.width - 24, 15, ui.TEXT, spacing=4)
+        ui.rich_text_block(s, ("Also: " + "; ".join(facts) + ".") if facts else "", (area.x + 12, area.y + 42),
+                           area.width - 24, 14, ui.DIM, spacing=4)
 
     def draw_intents(self, s, f, area):
         """Slay-the-Spire style intents: what the enemy will do next, and when."""
@@ -1732,6 +1895,7 @@ class BattleScene(Scene):
             clock += f"   (x{self.speed} speed  -  {self.real_t:.1f}s real)"
         text(s, clock, (W // 2, 42), 15, ui.DIM, True, center=True)
         self.status_hits = []
+        self.trait_hits = []
         if self.replays:
             text(s, f"REPLAY {self.replays}", (20, 18), 18, (200, 160, 255), True)
         tip_a = self.draw_fighter(s, 0, self.pf, mouse)
@@ -1762,6 +1926,15 @@ class BattleScene(Scene):
             for rr, key in self.status_hits:
                 if rr.collidepoint(mouse):
                     self.draw_keyword_tip(s, key, mouse)
+                    break
+            for rr, name, desc, col in self.trait_hits:
+                if rr.collidepoint(mouse):
+                    lines = ui.wrap(desc, 14, 300)
+                    h = 40 + 19 * len(lines)
+                    box = pygame.Rect(min(mouse[0] + 14, W - 330), min(mouse[1] + 14, H - h - 4), 320, h)
+                    panel(s, box, ui.PANEL, col)
+                    text(s, name, (box.x + 12, box.y + 8), 16, col, True)
+                    ui.text_block(s, desc, (box.x + 12, box.y + 32), 296, 14, ui.TEXT, spacing=5)
                     break
         if self.finished and self.show_summary:
             self.draw_summary(s)
@@ -2100,6 +2273,9 @@ class EventScene(Scene):
         elif res.get("forge"):
             nxt = lambda: g.change(SoulForgeScene(g, res["forge"], after))
             label = "Enter the forge"
+        elif res.get("upgrade"):
+            nxt = lambda: g.change(UpgradePickScene(g, after))
+            label = "Choose the item"
         else:
             nxt = lambda: g.change(after())
             label = "Continue"
@@ -2353,7 +2529,9 @@ class MatchHistoryScene(Scene):
         else:
             res = f"Fell on stage {r['stage']}, floor {r['row']}"
         text(s, res, (x0, y0 + 32), 18, ui.GOLD if r["won"] or r["stage"] >= 4 else (230, 130, 130), True)
-        text(s, f"{history.fmt_date(r['date'])}   -   {history.fmt_duration(r['duration'])}   -   "
+        times = r.get("stage_times") or []
+        per = ("   (" + ", ".join(f"S{i + 1} {fmt_clock(t)}" for i, t in enumerate(times)) + ")") if times else ""
+        text(s, f"{history.fmt_date(r['date'])}   -   {history.fmt_duration(r['duration'])}{per}   -   "
                 f"seed {r['seed']}   -   {r.get('game', 'before versions')}", (x0, y0 + 56), 13, ui.DIM)
         stats = [("Battles won", r["battles"]), ("Elites", r["elites"]), ("Bosses", r["bosses"]),
                  ("Max HP", r["max_hp"]), (f"{CUR} earned", r["gold"])]
@@ -2432,8 +2610,10 @@ class MatchHistoryScene(Scene):
                 kind = "AI ghost" if f.get("bot") else "player"
                 cls = CHARACTERS.get(f.get("vs_cls"), {}).get("name", "")
                 rec = f", {f['vs_record']} at the time" if f.get("vs_record") else ""
+                rt = r.get("round_times") or []
+                took = f" - round took {fmt_clock(rt[i])}" if i < len(rt) else ""
                 self.path_tip = (f"Round {f['round']}: {'beat' if f['won'] else 'lost to'} {who} "
-                                 f"({cls} {kind}{rec})")
+                                 f"({cls} {kind}{rec}){took}")
         return self.draw_kit_and_techniques(s, r, area, x0, y0 + 210)
 
     def draw(self, s):
@@ -2718,7 +2898,9 @@ class ArenaResultScene(Scene):
         a = self.run.arena
         text(s, "VICTORY" if self.won else "DEFEAT", (W // 2, 200), 80, ui.GOLD if self.won else ui.RED, True,
              center=True)
-        text(s, f"vs {self.opp['name']}", (W // 2, 270), 22, ui.DIM, center=True)
+        rt = self.run.arena.get("round_times") or []
+        took = f"   -   round took {fmt_clock(rt[-1])}" if rt else ""
+        text(s, f"vs {self.opp['name']}{took}", (W // 2, 270), 22, ui.DIM, center=True)
         text(s, f"{a['wins']} / {arena.MAX_WINS} wins", (W // 2, 340), 30, ui.TEXT, True, center=True)
         hs = arena.hearts(self.run)
         draw_hearts(s, (W // 2 - (arena.HEARTS - 1) * 13, 400), hs, size=11)
@@ -3240,3 +3422,144 @@ class SoulForgeScene(Scene):
         if hov is not None:
             rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 220), 330, 100)
             ui.draw_tooltip(s, hov.id, rr, eff=hov.data, extra=describe(hov), fit=True)
+
+
+# =================================================================== choose an item to level up
+class UpgradePickScene(Scene):
+    """The player chooses which item to level up (smith, well, forge). Shows the before/after stats."""
+    CARD = 104
+
+    def music(self):
+        return run_music(self.game)
+
+    def __init__(self, game, after, title="Choose an item to level up", count=1):
+        super().__init__(game)
+        from .data import max_level
+        self.run = game.run
+        self.after = after
+        self.title = title
+        self.count = count
+        self.items = [i for i in self.run.bag.items + self.run.stash.items]
+        self.ok = {i.uid: i.level < max_level(i.data) for i in self.items}
+        self.sel = None
+        self.rects = [pygame.Rect(40 + (k % 10) * (self.CARD + 16), 150 + (k // 10) * (self.CARD + 30),
+                                  self.CARD, self.CARD) for k in range(len(self.items[:30]))]
+        self.go = Button((W - 330, 640, 310, 56), "Level it up", self.confirm, 22, enabled=False)
+        self.buttons = [self.go]
+        if not any(self.ok.values()):
+            self.buttons = [Button((W // 2 - 140, 640, 280, 56), "Continue", self.leave, 22)]
+
+    def leave(self):
+        self.game.change(self.after())
+
+    def confirm(self):
+        if self.sel is None:
+            return
+        self.sel.level += 1
+        self.sel.refresh()
+        audio.play("merge")
+        self.game.toast(f"{ITEMS[self.sel.id]['name']} is now level {self.sel.level}!", ui.GOLD, 4)
+        self.count -= 1
+        if self.count > 0:
+            self.game.change(UpgradePickScene(self.game, self.after, self.title, self.count))
+        else:
+            self.leave()
+
+    def handle(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            for inst, r in zip(self.items, self.rects):
+                if r.collidepoint(ev.pos) and self.ok[inst.uid]:
+                    self.sel = inst
+                    self.go.enabled = True
+                    audio.play("click", 0.6)
+                    return True
+        return super().handle(ev)
+
+    def draw(self, s):
+        s.fill(ui.BG)
+        top_bar(s, self.run, "Upgrade")
+        text(s, self.title, (40, 66), 26, ui.GOLD, True)
+        text(s, "Weapons can reach level 5, everything else level 3.", (40, 104), 15, ui.DIM)
+        mouse = pygame.mouse.get_pos()
+        for inst, r in zip(self.items, self.rects):
+            ok = self.ok[inst.uid]
+            border = ui.GOLD if inst is self.sel else (ui.RARITY_COL[inst.data["rarity"]] if ok else ui.LINE)
+            panel(s, r, ui.PANEL2 if (r.collidepoint(mouse) and ok) else (ui.PANEL if ok else (22, 20, 28)), border,
+                  width=3 if inst is self.sel else 2)
+            pic = ui.art(inst.id, 60)
+            if pic:
+                if not ok:
+                    pic = pic.copy()
+                    pic.set_alpha(70)
+                s.blit(pic, pic.get_rect(center=(r.centerx, r.centery - 6)))
+            ui.draw_level(s, inst.level, r.x, r.y, self.CARD)
+            name = ITEMS[inst.id]["name"]
+            text(s, name if len(name) <= 15 else name[:14] + ".", (r.centerx, r.bottom + 5), 12,
+                 ui.TEXT if ok else ui.DIM, True, center=True)
+            if not ok:
+                text(s, "max level", (r.centerx, r.bottom - 18), 11, ui.DIM, center=True)
+        if self.sel is not None:
+            draw_level_compare(s, self.sel, pygame.Rect(40, 450, W - 400, 170))
+        self.draw_buttons(s)
+
+
+# =================================================================== recipe book (in a run)
+class RecipeBookScene(Scene):
+    """Every recipe, with a tick on the ingredients you already carry. Put the two next to each other in
+    your kit; they fuse when you leave the bag or shop screen."""
+
+    def music(self):
+        return run_music(self.game)
+
+    def __init__(self, game, back):
+        super().__init__(game)
+        self.back = back
+        self.run = game.run
+        self.buttons = [Button((W - 230, H - 70, 210, 52), "Back", self.leave, 22)]
+
+    def leave(self):
+        self.game.change(self.back)
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_b):
+            self.leave()
+            return True
+        return super().handle(ev)
+
+    def draw(self, s):
+        s.fill(ui.BG)
+        top_bar(s, self.run, "Recipe book")
+        text(s, "Recipe book", (30, 62), 28, ui.GOLD, True)
+        text(s, "Put both ingredients next to each other in your KIT. They fuse into the result when you leave the "
+                "bag or shop screen.", (30, 100), 15, ui.DIM)
+        owned = {i.id for i in self.run.all_items()}
+        mouse = pygame.mouse.get_pos()
+        tip = None
+        for k, (pair, res) in enumerate(RECIPES.items()):
+            col, row = k % 2, k // 2
+            r = pygame.Rect(30 + col * 615, 134 + row * 84, 600, 76)
+            a, b = sorted(pair)
+            ready = a in owned and b in owned
+            panel(s, r, (40, 46, 34) if ready else ui.PANEL, ui.GREEN if ready else ui.LINE, radius=8)
+            for j, iid in enumerate((a, b, res)):
+                cx = r.x + 48 + j * 150
+                pic = ui.art(iid, 42)
+                if pic:
+                    s.blit(pic, pic.get_rect(center=(cx, r.y + 30)))
+                have = iid in owned
+                name = ITEMS[iid]["name"]
+                text(s, name if len(name) <= 20 else name[:19] + ".", (cx, r.y + 60), 12,
+                     ui.GREEN if (have and j < 2) else ui.TEXT, True, center=True)
+                if have and j < 2:
+                    pygame.draw.circle(s, ui.GREEN, (cx + 26, r.y + 10), 6)
+                if pygame.Rect(cx - 34, r.y + 4, 68, 68).collidepoint(mouse):
+                    tip = iid
+            text(s, "+", (r.x + 123, r.y + 26), 24, ui.GOLD, True, center=True)
+            text(s, "=", (r.x + 273, r.y + 26), 24, ui.GOLD, True, center=True)
+            note = "You have both - put them side by side!" if ready else \
+                ("You have one of them" if (a in owned or b in owned) else "")
+            text(s, note, (r.x + 400, r.y + 28), 13, ui.GREEN if ready else ui.DIM, True)
+        self.draw_buttons(s)
+        if tip:
+            rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 200), 330, 100)
+            ui.draw_tooltip(s, tip, rr, fit=True)

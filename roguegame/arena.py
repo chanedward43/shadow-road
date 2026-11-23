@@ -47,6 +47,7 @@ def tech_hp(run):
 def start_round(run):
     a = run.arena
     a["round"] += 1
+    a["round_start"] = getattr(run, "play_time", 0.0)
     run.stage = stage_for(a["round"])
     run.max_hp = a["base_hp"] + HP_PER_ROUND * (a["round"] - 1) + tech_hp(run)
     run.hp = run.max_hp
@@ -66,6 +67,8 @@ def hearts(run):
 def apply_result(run, won, opponent=None):
     """Record a fight. Returns 'champion', 'out' or 'next'."""
     a = run.arena
+    secs = round(getattr(run, "play_time", 0.0) - a.get("round_start", 0.0), 1)
+    a.setdefault("round_times", []).append(secs)
     if won:
         a["wins"] += 1
     else:

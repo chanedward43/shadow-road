@@ -1375,3 +1375,42 @@ ENEMIES["orochi"]["desc"] = ("The eight-headed serpent. More heads wake as it we
 _tune_enemy("orochi", hp=560)
 _tune_item("e_orochi_head", cd=1.5)
 _tune_enemy("orochi", hp=520)
+
+
+# ================================================================ v0.99 ENEMY GEAR SCALES WITH THE STAGE
+# Enemies grow by carrying MORE and BETTER real items each stage (like the player does), not just by
+# bigger numbers. Counts are random fill on top of each enemy's fixed core (its drop / signature moves).
+#                 stage:   1  2  3  4+ (endless adds one more per stage, capped)
+ENEMY_FILL_COUNT = {"mob":   (1, 2, 3, 3), "elite": (2, 3, 4, 4), "boss":  (3, 4, 5, 5)}
+
+
+def _fill_level(tier, stage, k):
+    """Level of the k-th fill item: later stages and tougher tiers carry merged (levelled) gear."""
+    s = min(stage, 4)
+    top = max(1, s - 1) if tier == "mob" else s          # stage 1: plain gear; stage 3: level 3 for elites/bosses
+    return max(1, min(3, top - (1 if k >= 2 else 0)))
+
+
+def enemy_fill(eid, stage, rng):
+    """Random extra gear for one battle: [(item_id, level)]. Deterministic for a given rng."""
+    tier = enemy_tier(eid)
+    core = {i for i, _ in ENEMIES[eid].get("kit", [])}
+    s = max(1, stage)
+    n = ENEMY_FILL_COUNT[tier][min(s, 4) - 1] + (min(2, s - 4) if s > 4 else 0)
+    rar = {1: ("common", "rare"), 2: ("common", "rare", "epic"), 3: ("rare", "epic")}.get(s, ("rare", "epic", "legendary"))
+    if tier == "boss" and s >= 3:
+        rar = ("rare", "epic", "legendary")
+    shared = [i for i in _pool(lambda c: c is None, rar) if i not in core]
+    classed = _pool(lambda c: c is not None, rar)
+    picks = []
+    if tier in ("elite", "boss"):                        # elites/bosses wield class gear from other paths
+        classes = rng.sample(sorted(CHARACTERS), 2 if tier == "boss" else 1)
+        for c in classes:
+            opts = [i for i in classed if ITEMS[i]["cls"] == c and i not in picks]
+            if opts:
+                picks.append(rng.choice(opts))
+    while len(picks) < n and shared:
+        i = rng.choice(shared)
+        if i not in picks or len(shared) <= len(picks):
+            picks.append(i)
+    return [(iid, _fill_level(tier, s, k)) for k, iid in enumerate(picks[:n])]

@@ -39,7 +39,7 @@ def run_to_dict(run):
         battles_won=run.battles_won, rerolls=run.rerolls, techniques=run.techniques, kills=run.kills,
         started=run.started, path=run.path, gold_earned=run.gold_earned, mode=run.mode,
         asc=run.asc, consumables=run.consumables, flags=run.flags, stats=run.stats,
-        arena=getattr(run, "arena", None),
+        arena=getattr(run, "arena", None), play_time=run.play_time, stage_times=run.stage_times,
     )
 
 
@@ -49,6 +49,8 @@ def run_from_dict(d):
     run.consumables = d.get("consumables", [])
     run.flags = d.get("flags", {})
     run.stats = d.get("stats", run.stats)
+    run.play_time = float(d.get("play_time", 0.0))
+    run.stage_times = list(d.get("stage_times", []))
     if d.get("arena"):
         run.arena = d["arena"]
     st = d["rng"]

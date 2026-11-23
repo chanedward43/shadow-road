@@ -13,7 +13,7 @@ Steps
  3. TUNE    - (with --autotune) nudge the balance knobs and re-measure until:
                 * skilled-agent win rate is near --target (default 20%: a hard game),
                 * regular mobs + elites cause at least 30% of deaths (mobs must matter),
-                * no class is more than 7 points away from the class average.
+                * every class is within 3 points of the class average (so each class is ~20%).
               Then retrain the agents on the new difficulty and measure again.
  4. WRITE   - assets/balance.json (knobs the game loads at start), assets/ai/<class>.npz
               (trained agents), assets/balance_report.md and .json.
@@ -132,7 +132,7 @@ def autotune(bal, args, pool, log):
             f"mobs cause {mob_share*100:.0f}% of deaths  [{summary_line(res)}]")
         changed = False
         # Proportional steps: a big miss gets a big correction, a small miss a small one.
-        if abs(w - args.target) > 0.04:
+        if abs(w - args.target) > 0.03:
             sign = 1 if w > args.target else -1
             if last_sign and sign != last_sign:
                 gain *= 0.5
@@ -151,7 +151,7 @@ def autotune(bal, args, pool, log):
             bal["fight_mult"] = round(bal["fight_mult"] * 0.95, 3)
             changed = True
         for c, s in st.items():
-            if abs(s["win_rate"] - w) > 0.05:      # weaker class: more HP, stronger class: less
+            if abs(s["win_rate"] - w) > 0.03:      # weaker class: more HP, stronger class: less
                 f = clamp(((w + 0.03) / (s["win_rate"] + 0.03)) ** 0.35, 0.85, 1.2)
                 bal["class_hp"][c] = round(bal["class_hp"].get(c, 1.0) * f, 3)
                 log(f"    {c} HP x{f:.2f}")

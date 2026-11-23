@@ -8,7 +8,7 @@ While BETA is True the game shows "Beta". When the first real season starts, set
 and VERSION = "1.00".
 """
 BETA = True
-VERSION = "0.98"
+VERSION = "0.99"
 
 
 def label():

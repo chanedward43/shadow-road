@@ -52,10 +52,7 @@ def fox_bow(run, rng):
 
 def smith_temper(run, rng):
     run.gold -= 10
-    it = run.upgrade_random(rng)
-    if not it:
-        return dict(text="The smith shrugs. Everything you carry is already a masterwork.")
-    return dict(text=f"Sparks fly. Your {ITEMS[it.id]['name']} is now level {it.level}!")
+    return dict(text="The smith wipes his brow. 'Which piece shall I temper?'", upgrade=1)
 
 
 def smith_trade(run, rng):
@@ -151,9 +148,8 @@ def well_drink(run, rng):
 
 def well_coin(run, rng):
     run.gold -= 3
-    it = run.upgrade_random(rng) if rng.random() < 0.5 else None
-    if it:
-        return dict(text=f"The well spirit accepts your coin. Your {ITEMS[it.id]['name']} glows: level {it.level}!")
+    if rng.random() < 0.5:
+        return dict(text="The well spirit accepts your coin. Choose an item for it to bless.", upgrade=1)
     return dict(text="The coin sinks silently. Nothing happens.")
 
 

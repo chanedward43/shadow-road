@@ -34,7 +34,9 @@ def record_from_run(run, won):
         battles=run.battles_won,
         elites=tiers.count("elite"),
         bosses=tiers.count("boss"),
-        duration=max(0, int(time.time() - run.started)),
+        duration=int(getattr(run, "play_time", 0)) or max(0, int(time.time() - run.started)),
+        stage_times=list(getattr(run, "stage_times", [])) + [round(getattr(run, "play_time", 0.0)
+                                                                    - sum(getattr(run, "stage_times", [])), 1)],
         seed=run.seed,
         max_hp=run.max_hp,
         gold=run.gold_earned,
@@ -91,7 +93,8 @@ def arena_record(run):
     a = run.arena
     return dict(v=HISTORY_VERSION, game=label(), date=time.time(), char=run.char_id, wins=a["wins"],
                 losses=a["losses"], rounds=a["round"], champion=a["wins"] >= 10,
-                duration=max(0, int(time.time() - run.started)), max_hp=run.max_hp,
+                duration=int(getattr(run, "play_time", 0)) or max(0, int(time.time() - run.started)),
+                round_times=list(a.get("round_times", [])), max_hp=run.max_hp,
                 techniques=list(run.techniques), kit=run.bag.to_dict(),
                 fights=[dict(f) for f in a["history"]])
 

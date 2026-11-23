@@ -87,7 +87,12 @@ class TestContent(unittest.TestCase):
             self.assertTrue(all(data.ITEMS[i]["cls"] is None for i, _ in mob), "mobs: shared items only")
             elite = data.enemy_fill("nue", 3, _r.Random(seed))
             self.assertIsNotNone(data.ITEMS[elite[0][0]]["cls"], "elites carry a class item")
-            self.assertEqual(elite[0][1], 2, "elite class item is level 2 in stage 3")
+            self.assertEqual(elite[0][1], 3, "elite class item is level 3 in stage 3")
+            self.assertEqual(len(elite), data.ENEMY_FILL_COUNT["elite"][2])
+            for tier, eid in (("mob", "kappa"), ("elite", "nue"), ("boss", "orochi")):    # more gear each stage
+                counts = [len(data.enemy_fill(eid, st, _r.Random(seed))) for st in (1, 2, 3)]
+                self.assertEqual(counts, sorted(counts), f"{tier}s carry more items as stages go on")
+                self.assertLess(counts[0], counts[2])
             boss = data.enemy_fill("orochi", 3, _r.Random(seed))
             classes = [data.ITEMS[i]["cls"] for i, _ in boss[:2]]
             self.assertTrue(all(classes) and classes[0] != classes[1], "bosses: items from two different classes")
@@ -1000,6 +1005,60 @@ class TestDifficultyCurve(unittest.TestCase):
         early = r.enemy_scale("fight")
         r.pos = (4, 0)
         self.assertGreater(r.enemy_scale("fight"), early)
+
+
+class TestV099(unittest.TestCase):
+    def test_upgrade_events_let_you_choose(self):
+        from roguegame.events import EVENT_BY_ID, resolve
+        r = RunState("samurai", 2)
+        r.gold = 30
+        res = resolve(r, EVENT_BY_ID["smith"], 0)
+        self.assertEqual(res.get("upgrade"), 1, "the smith asks which item")
+        self.assertEqual(r.gold, 20)
+
+    def test_battle_debrief_tracking(self):
+        r = RunState("kunoichi", 4)
+        r.stats["battles"] = 1
+        b = make_battle(r, "jorogumo", 1.5, seed=3)
+        b.run_to_end()
+        self.assertTrue(b.taken[0], "we know what hurt the player")
+        self.assertEqual(sum(b.taken[1].values()), b.f[1].max_hp - max(0, b.f[1].hp) + b.healed[1])
+        phases = make_battle(r, "kurogane", 0.5, seed=1)
+        phases.run_to_end()
+        self.assertTrue(any("phase" in e["delta"] for e in phases.log), "transformations are in the log")
+
+    def test_run_clock_and_stage_times(self):
+        r = RunState("ninja", 5)
+        r.play_time = 125.0
+        r.next_stage()
+        r.play_time = 300.0
+        r.next_stage()
+        self.assertEqual(r.stage_times, [125.0, 175.0])
+        save.save_run(r)
+        self.assertEqual(save.load_run().play_time, 300.0)
+        save.clear_run()
+        from roguegame import history
+        rec = history.record_from_run(r, False)
+        self.assertEqual(rec["stage_times"], [125.0, 175.0, 0.0])
+        self.assertEqual(rec["duration"], 300)
+
+    def test_new_screens_draw(self):
+        import pygame
+        from main import Game
+        from roguegame import scenes
+        g = Game()
+        g.run = RunState("samurai", 6)
+        inv = scenes.InventoryScene(g, "manage", on_done=lambda: None)
+        for sc in (scenes.UpgradePickScene(g, lambda: inv), scenes.RecipeBookScene(g, inv)):
+            g.change(sc)
+            sc.draw(g.screen)
+        up = scenes.UpgradePickScene(g, lambda: inv)
+        up.sel = up.items[0]
+        before = up.sel.level
+        up.confirm()
+        self.assertEqual(g.run.bag.items[0].level if g.run.bag.items[0] is up.sel else up.sel.level, before + 1)
+        self.assertTrue(scenes.battle_numbers(g.run, next(i for i in g.run.bag.items if i.id == "katana")))
+        pygame.quit()
 
 
 class TestScreens(unittest.TestCase):

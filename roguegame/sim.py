@@ -178,6 +178,8 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                     break
             elif res.get("choose"):
                 pick_item(res["choose"], "reward")
+            elif res.get("upgrade"):
+                run.upgrade_random(run.rng)
             elif res.get("forge"):
                 from .events import auto_infuse, pay_forge
                 if auto_infuse(run, run.rng):

@@ -1020,8 +1020,27 @@ class InventoryScene(Scene):
             else:
                 text(s, "ENEMY DROP" if iid in self.drops else "FREE", (r.centerx, r.bottom - 22), 16,
                      ui.GOLD if iid in self.drops else ui.GREEN, True, center=True)
+            # does this offer merge with something you own, or complete a recipe?
+            mates = [i for i in run.all_items() if i.id == iid and i.level == 1]
+            partners = [(i, res) for p_, res in recipes_for(iid) for i in run.all_items() if i.id == p_]
+            notes = []
+            if mates:
+                bx = pygame.Rect(r.x + 6, r.y + 6, 62, 20)
+                pygame.draw.rect(s, ui.GOLD, bx, border_radius=5)
+                text(s, "MERGE", bx.center, 12, (30, 22, 10), True, center=True)
+                notes.append(f"You own a level-1 {d['name']}: drop this on it to make level 2.")
+            if partners:
+                bx = pygame.Rect(r.right - 70, r.y + 6, 64, 20)
+                pygame.draw.rect(s, (190, 150, 255), bx, border_radius=5)
+                text(s, "RECIPE", bx.center, 12, (30, 16, 40), True, center=True)
+                inst, res = partners[0]
+                notes.append(f"Recipe: put it next to your {ITEMS[inst.id]['name']} = {ITEMS[res]['name']}.")
             if hov:
-                hover_tip = (iid, None, run.price(iid) if self.mode == "shop" else None, None)
+                hover_tip = (iid, None, run.price(iid) if self.mode == "shop" else None, " ".join(notes) or None)
+                for m in mates:                               # show which of your items it would work with
+                    self.highlight[m.uid] = ui.GOLD
+                for inst, _ in partners:
+                    self.highlight[inst.uid] = (190, 150, 255)
         cons_tip = None
         for cid, r in zip(self.cons_offers, self.cons_rects):
             if cid is None:
@@ -1039,6 +1058,10 @@ class InventoryScene(Scene):
             text(s, "consumable", (r.right - 8, r.y + 30), 11, (120, 200, 170), right=True)
             if hov:
                 cons_tip = c
+        if any(o and (any(i.id == o and i.level == 1 for i in run.all_items()) or
+                      any(i.id == p_ for p_, _ in recipes_for(o) for i in run.all_items())) for o in self.offers):
+            text(s, "MERGE = you own a copy to level up.  RECIPE = combines with an item you own. Hover to see which.",
+                 (30, 268), 13, ui.DIM)
         if not self.offers:
             text(s, "Arrange your kit. Only items on the TATAMI are equipped and fight for you.", (30, 70), 18,
                  ui.DIM)
@@ -1956,11 +1979,15 @@ class RestScene(Scene):
     def __init__(self, game):
         super().__init__(game)
         self.run = run = game.run
-        heal = int(run.max_hp * (0.2 if run.asc >= 6 else REST_HEAL))
+        from .data import max_level
+        heal = min(int(run.max_hp * (0.2 if run.asc >= 6 else REST_HEAL)), run.max_hp - run.hp)
+        can_up = any(i.level < max_level(i.data) for i in run.all_items())
         self.buttons = [
-            Button((W // 2 - 320, 400, 300, 70), f"Bathe: heal {heal} HP", self.rest, 20),
-            Button((W // 2 + 20, 400, 300, 70), "Dojo training: +5 Max HP", self.train, 20),
+            Button((W // 2 - 460, 410, 290, 74), f"Bathe: heal {heal} HP", self.rest, 20),
+            Button((W // 2 - 145, 410, 290, 74), "Dojo: +5 Max HP", self.train, 20),
+            Button((W // 2 + 170, 410, 290, 74), "Smithy: upgrade an item", self.upgrade, 20, enabled=can_up),
         ]
+        self.before_boss = run.pos is not None and run.pos[0] == len(run.map) - 2
 
     def rest(self):
         self.run.rest()
@@ -1970,7 +1997,12 @@ class RestScene(Scene):
     def train(self):
         self.run.max_hp += 5
         self.run.hp += 5
+        audio.play("levelup")
         self.game.change(MapScene(self.game))
+
+    def upgrade(self):
+        self.game.change(UpgradePickScene(self.game, lambda: MapScene(self.game),
+                                          "The onsen smithy: choose an item to level up"))
 
     def draw(self, s):
         s.fill(ui.BG)
@@ -1979,8 +2011,12 @@ class RestScene(Scene):
         for i in range(6):  # steam
             x = W // 2 - 100 + i * 40
             pygame.draw.arc(s, (200, 200, 210), (x, 170 + (i % 2) * 15, 30, 70), 1.2, 4.5, 3)
-        text(s, "Steam rises from a mountain hot spring. Rest, or train at the dojo nearby.", (W // 2, 360),
-             20, ui.DIM, center=True)
+        msg = ("The last onsen before the villain. Choose one: rest, train, or have the smithy temper your gear."
+               if self.before_boss else "Steam rises from a mountain hot spring. Choose one: rest, train, or upgrade.")
+        text(s, msg, (W // 2, 362), 20, ui.GOLD if self.before_boss else ui.DIM, center=True)
+        hpf = self.run.hp / max(1, self.run.max_hp)
+        text(s, f"HP {self.run.hp}/{self.run.max_hp} ({int(hpf * 100)}%)", (W // 2, 520), 17,
+             ui.RED if hpf < 0.5 else ui.TEXT, True, center=True)
         self.draw_buttons(s)
 
 

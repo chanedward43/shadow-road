@@ -415,3 +415,52 @@ They are saved with the run, sent with Arena ghosts, and kept in match history.
     Poison/Burn/Curse x3 (Vengeful);
   - passive gear -> Guardian Spirit.
   - Simulations record battles too, so the AI balance includes awakened items.
+
+## v1.00 content
+- **New class items, 4 per class**: each one serves one of the class's two build paths.
+
+  | Class | Path | Items |
+  |---|---|---|
+  | Samurai | Swarm | Kenshi's Oath, Hachiman's Banner |
+  | Samurai | Fortress | Kiri-oroshi Blade (+2 dmg per armour), Tatami-dō |
+  | Ninja | Swarm | Senbon Needles, Shadow Bandolier |
+  | Ninja | Fire | Hōroku-hiya, Katon Seal |
+  | Kunoichi | Venom | Mamushi Fang, Wisteria Incense |
+  | Kunoichi | Crit control | Mirror Hairpin (crits stun), Silent-Step Tabi |
+  | Onmyōji | Army | Inugami Talisman, Spirit Lantern |
+  | Onmyōji | Curse | Bell of Ill Omen, Yin-Yang Mirror |
+  | Sōhei | Iron faith | Iron Kesa, Vajra Staff |
+  | Sōhei | Ki burst | Prayer Drum, Thunder Sutra |
+
+- **Shared items** open cross-class archetypes:
+
+  | Item | Archetype |
+  |---|---|
+  | Rice Wine Cask | stamina |
+  | Shogi Board | speed for any build |
+  | Bamboo Shield | Block |
+  | Kusari Chain | Steal Block against tanky enemies |
+  | Oni-gawara Tile | counter-tank trigger |
+  | Herbalist's Satchel | against Poison and Burn |
+
+- **New enemies**, each with a signature move and a build-piece drop:
+
+  | Enemy | Stage | Tier |
+  |---|---|---|
+  | Bakezōri | 1 | mob |
+  | Nopperabō | 2 | mob |
+  | Wanyūdō | 3 | mob |
+  | Umi-bōzu | 2 | elite |
+  | Kuchisake-onna | 3 | elite |
+
+- **Enemy gear by stage**:
+  - Mobs carry 1/2/3 items in stages 1/2/3.
+  - Elites carry 2/3/3.
+  - Bosses carry 3/4/4.
+  - Gear levels rise with the stage, up to level 2 in the story and level 3 in endless.
+- **Pre-boss onsen**: the row before every villain is a single onsen. You choose to heal, train or upgrade an item.
+- **Content tuning from the v0.99 report**:
+  - Stage-3 villains and elites were softened.
+  - Stage-1/2 villains got more HP.
+  - Over-performing Onmyōji items and legendaries were trimmed.
+  - Under-used commons were buffed.

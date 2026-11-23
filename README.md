@@ -135,7 +135,7 @@ The free tier pauses a project after a week with no visitors; open the dashboard
 The version is shown bottom-left on every screen and saved with each run in Match History. Bump
 `VERSION` in [roguegame/version.py](roguegame/version.py) before pushing:
 **+0.01** hotfix or number tweaks, **+0.1** new items / UI / character changes, **+1** a new season.
-While in beta it shows `Beta v0.xx`. For the first season, set `BETA = False` and `VERSION = "1.00"`.
+While in beta it shows `Beta v1.xx`. When the game goes live, set `BETA = False`; the number keeps counting.
 
 ## Run the reinforcement learning yourself
 The **Balance Director** (`tools/balance.py`) trains one AI agent per class, measures how often a
@@ -157,7 +157,11 @@ pip install pygame-ce numpy
 
 Flags: `--episodes` = training runs per class (more = smarter agents, slower), `--eval` = test runs
 per class (more = more accurate %), `--target 0.20` = desired win rate for a skilled player,
-`--rounds` = max tuning rounds, `--checkpoint` = stop at the first balanced point.
+`--rounds` = max tuning rounds, `--checkpoint` = stop at the first balanced point,
+`--seed N` = repeat an earlier run exactly (by default every run picks fresh random seeds and prints
+them, so the AI sees new maps, enemy casts and shops each time - like real players), `--fresh` = train
+new agents from scratch instead of continuing from the saved ones. The balancer keeps every class within
+3 points of the average win rate.
 
 **Do I need to retrain?** Usually not. The agents describe every choice by *what it does* (damage,
 Block, Poison, gold, healing, items, fights...), never by its name, so the trained agents already

@@ -19,7 +19,7 @@ from roguegame.ai import LearningAgent  # noqa: E402
 from roguegame.data import CHARACTERS, ENEMIES  # noqa: E402
 from roguegame.sim import play  # noqa: E402
 
-SEED0 = 900_000
+SEED0 = int.from_bytes(__import__("os").urandom(4), "little") % 1_000_000_000   # random each time
 
 
 def _run(args):

@@ -87,7 +87,8 @@ class TestContent(unittest.TestCase):
             self.assertTrue(all(data.ITEMS[i]["cls"] is None for i, _ in mob), "mobs: shared items only")
             elite = data.enemy_fill("nue", 3, _r.Random(seed))
             self.assertIsNotNone(data.ITEMS[elite[0][0]]["cls"], "elites carry a class item")
-            self.assertEqual(elite[0][1], 3, "elite class item is level 3 in stage 3")
+            self.assertEqual(elite[0][1], data._fill_level("elite", 3, 0), "elite gear level follows the stage")
+            self.assertGreater(data._fill_level("elite", 3, 0), data._fill_level("elite", 1, 0))
             self.assertEqual(len(elite), data.ENEMY_FILL_COUNT["elite"][2])
             for tier, eid in (("mob", "kappa"), ("elite", "nue"), ("boss", "orochi")):    # more gear each stage
                 counts = [len(data.enemy_fill(eid, st, _r.Random(seed))) for st in (1, 2, 3)]
@@ -187,8 +188,9 @@ class TestMechanics(unittest.TestCase):
     def test_curse_reduces_damage_and_hex_scales(self):
         r = self.kit("onmyoji", ["onmyo_compass", "hex_scroll"])
         b = make_battle(r, "kurogane", 1.0, seed=0)
-        self.assertEqual(b.f[1].curse, 4)                 # 3 from the Compass + 1 from Shikigami Pact
-        self.assertEqual(b._cursed(b.f[1], 100), 80)      # 4 stacks x 5% = 20% less damage
+        stacks = data.ITEMS["onmyo_compass"]["s_curse"] + 1    # the Compass + 1 from Shikigami Pact
+        self.assertEqual(b.f[1].curse, stacks)
+        self.assertEqual(b._cursed(b.f[1], 100), 100 - 5 * stacks)   # 5% less damage per stack
         b.f[1].curse = 30
         self.assertEqual(b._cursed(b.f[1], 100), 50)      # capped at 50%
         b.run_to_end()
@@ -1008,6 +1010,15 @@ class TestDifficultyCurve(unittest.TestCase):
 
 
 class TestV099(unittest.TestCase):
+    def test_onsen_before_every_boss(self):
+        for seed in range(30):
+            r = RunState("onmyoji", seed)
+            for _ in range(3):
+                before_boss = r.map[-2]
+                self.assertEqual([n["kind"] for n in before_boss], ["rest"], "one onsen right before the boss")
+                self.assertTrue(all(0 in n["links"] for n in r.map[-3]), "every path leads to it")
+                r.next_stage()
+
     def test_upgrade_events_let_you_choose(self):
         from roguegame.events import EVENT_BY_ID, resolve
         r = RunState("samurai", 2)

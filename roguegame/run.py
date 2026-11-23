@@ -19,13 +19,13 @@ MAP_ROWS = 6
 def gen_map(rng, stage):
     rows = []
     for r in range(MAP_ROWS):
-        n = 2 if r == 0 else rng.choice([2, 3, 3, 4])
+        n = 2 if r == 0 else (1 if r == MAP_ROWS - 1 else rng.choice([2, 3, 3, 4]))
         row = []
         for c in range(n):
             if r == 0:
                 kind = "fight"
             elif r == MAP_ROWS - 1:
-                kind = rng.choice(["rest", "shop", "rest", "event"])
+                kind = "rest"                 # always an onsen right before the boss: heal, train or upgrade
             else:
                 pool = ["fight"] * 8 + ["shop"] * 2 + ["treasure"] * 1 + ["event"] * 4
                 if r >= 2:

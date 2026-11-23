@@ -28,17 +28,17 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 from roguegame.data import ITEMS, ENEMIES, CHARACTERS, TECHNIQUES, enemy_tier, STAGES  # noqa: E402
 from roguegame.version import VERSION  # noqa: E402
 
-SEED0 = 700_000           # report seeds: never used for training or the balance measurement
+SEED0 = None              # random per report (set in main); --seed N repeats a report exactly
 
 
 # ---------------------------------------------------------------- playing
 def _play(args):
-    cls, start, n = args
+    cls, start, n, seed0 = args
     from roguegame.ai import LearningAgent
     from roguegame.sim import play
     agent = LearningAgent(cls).load(os.path.join(ROOT, "assets", "ai", f"{cls}.npz"))
     agent.greedy = True
-    return [play(cls, SEED0 + i, agent) for i in range(start, start + n)]
+    return [play(cls, seed0 + i, agent) for i in range(start, start + n)]
 
 
 def collect(runs_per_class, workers=5):
@@ -46,7 +46,7 @@ def collect(runs_per_class, workers=5):
     chunk = max(1, runs_per_class // 4)
     for cls in CHARACTERS:
         for start in range(0, runs_per_class, chunk):
-            jobs.append((cls, start, min(chunk, runs_per_class - start)))
+            jobs.append((cls, start, min(chunk, runs_per_class - start), SEED0))
     with Pool(workers) as pool:
         parts = pool.map(_play, jobs)
     return [r for part in parts for r in part]
@@ -400,7 +400,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs", type=int, default=200, help="runs per class")
     ap.add_argument("--no-images", action="store_true", help="skip the winning-board pictures")
+    ap.add_argument("--seed", type=int, default=None, help="base seed (default: random every report)")
     a = ap.parse_args()
+    global SEED0
+    SEED0 = a.seed if a.seed is not None else int.from_bytes(os.urandom(4), "little") % 1_000_000_000
+    print(f"Seed {SEED0} (repeat with --seed {SEED0})", flush=True)
     out_dir = os.path.join(ROOT, "reports", f"v{VERSION}")
     board_dir = os.path.join(out_dir, "wins")
     os.makedirs(board_dir, exist_ok=True)

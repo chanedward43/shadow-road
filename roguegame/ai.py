@@ -36,7 +36,7 @@ KNOWN_ITEM_KEYS = {
     "lifesteal", "summon", "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "per_tag", "s_crit_block",
     "s_crit_poison", "grow", "steal_block", "cleanse", "stamina_cost", "stamina_gain", "s_stamina",
     "s_stamina_regen", "gold_per_win", "interest", "gold_per_boss", "discount", "trigger", "n", "alone_dmg",
-    "aura", "regen", "s_regen", "s_thorns", "speed", "level", "adj", "sunder"}
+    "aura", "regen", "s_regen", "s_thorns", "speed", "level", "adj", "sunder", "crit_stun"}
 
 
 def _state(run):
@@ -59,7 +59,7 @@ def item_features(iid, run):
           len(d["shape"]) / 6.0, d["price"] / 20.0]
     f += [1.0 if t in d["tags"] else 0.0 for t in TAGS]
     f += [1.0 if d.get("aura") else 0.0, dmg / 5.0, per("block") / 3.0, per("heal") / 2.0,
-          per("poison") / 1.5, per("burn") / 1.5, d.get("stun", 0), per("dodge"),
+          per("poison") / 1.5, per("burn") / 1.5, d.get("stun", 0) + d.get("crit_stun", 0) * 0.5, per("dodge"),
           d.get("s_evade", 0) * 5, d.get("crit", 0) * 5 + d.get("s_crit", 0) * 5,
           (d.get("s_block", 0) + d.get("s_hp", 0)) / 20.0, d.get("lifesteal", 0) * 2]
     f += [run.hp / max(1, run.max_hp) * (per("heal") / 2.0)]   # healing matters more when hurt
@@ -119,10 +119,12 @@ def path_features(kind, run):
     return one
 
 
-def rest_features(choice, run):
-    f = np.zeros(4)
-    f[choice * 2:(choice + 1) * 2] = [1.0, run.hp / max(1, run.max_hp)]
-    return f
+def rest_features(option, run):
+    """Onsen choice by what it does: healing (worth more when hurt), max HP, or levelling an item up."""
+    hpr = run.hp / max(1, run.max_hp)
+    heal, train, up = option == "heal", option == "train", option == "upgrade"
+    best = max((i.data.get("price", 0) for i in run.bag.items), default=0) / 20.0
+    return np.array([float(heal), heal * (1 - hpr), float(train), float(up), up * best, run.stage / 3.0])
 
 
 def event_features(label, run):
@@ -160,7 +162,7 @@ TECH_DIM = 1 + len(TECH_KEYS) + 1
 FEATURES = {
     "item": (item_features, ITEM_DIM),
     "path": (path_features, len(KINDS) * 4),
-    "rest": (lambda o, r: rest_features(0 if o == "heal" else 1, r), 4),
+    "rest": (rest_features, 6),
     "event": (event_features, EVENT_DIM),
     "tech": (tech_features, TECH_DIM),
 }

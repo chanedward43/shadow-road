@@ -35,7 +35,10 @@ from roguegame.sim import play  # noqa: E402
 
 CLASSES = list(data.CHARACTERS)
 ASSETS = os.path.join(ROOT, "assets")
-TRAIN_SEED0, EVAL_SEED0 = 1_000_000, 9_000_000   # train and test on different seeds
+def random_seed0():
+    """A fresh random base seed: every training / balancing run plays different maps, casts and shops, like
+    real players do. Pass --seed N to repeat a run exactly."""
+    return int.from_bytes(os.urandom(4), "little") % 1_000_000_000
 
 
 def _set_balance(bal):
@@ -45,27 +48,30 @@ def _set_balance(bal):
 
 
 def _train(args):
-    cls, episodes, bal, warm = args
+    cls, episodes, bal, warm, seed0 = args
     _set_balance(bal)
-    agent = LearningAgent(cls, seed=hash(cls) % 1000)
+    agent = LearningAgent(cls, seed=seed0 % 100_000)
     path = os.path.join(ASSETS, "ai", f"{cls}.npz")
     if warm and os.path.exists(path):
-        agent.load(path)
-    agent.train(episodes, TRAIN_SEED0 + (episodes if warm else 0))
+        agent.load(path)                       # keep what was learned; parts whose shape changed start fresh
+    agent.train(episodes, seed0 + CLASSES.index(cls) * 10_000_000)
     agent.save(path)
     return cls
 
 
 def _evaluate(args):
-    cls, n, bal = args
+    cls, n, bal, seed0 = args
     _set_balance(bal)
     agent = LearningAgent(cls).load(os.path.join(ASSETS, "ai", f"{cls}.npz"))
     agent.greedy = True
-    return cls, [play(cls, EVAL_SEED0 + i, agent) for i in range(n)], describe_policy(agent)
+    return cls, [play(cls, seed0 + i, agent) for i in range(n)], describe_policy(agent)
+
+
+EVAL_SEED0 = None          # set once per balance run (random), so every tuning round is measured on the same maps
 
 
 def measure(n, bal, pool):
-    results = pool.map(_evaluate, [(c, n, bal) for c in CLASSES])
+    results = pool.map(_evaluate, [(c, n, bal, EVAL_SEED0) for c in CLASSES])
     return {cls: (runs, pol) for cls, runs, pol in results}
 
 
@@ -216,7 +222,13 @@ def main():
                     help="stop at the first balanced point: skip retraining and report that round's win rates")
     ap.add_argument("--report", type=int, default=0, metavar="RUNS",
                     help="afterwards, write the Excel run report (tools/run_report.py) with RUNS runs per class")
+    ap.add_argument("--seed", type=int, default=None, help="base seed (default: a new random one every run)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="train new agents from scratch instead of continuing from the saved ones")
     args = ap.parse_args()
+    global EVAL_SEED0
+    seed0 = args.seed if args.seed is not None else random_seed0()
+    EVAL_SEED0 = seed0 + 500_000_000                    # test seeds never overlap the training seeds
 
     def log(msg):
         print(msg, flush=True)
@@ -224,13 +236,14 @@ def main():
     bal = json.loads(json.dumps(data.BALANCE))
     bal["stage_mult"] = {str(k): v for k, v in bal["stage_mult"].items()}
     t0 = time.time()
+    log(f"Seed {seed0} (repeat this run with --seed {seed0})")
     with Pool(len(CLASSES)) as pool:
         have_agents = all(os.path.exists(os.path.join(ASSETS, "ai", f"{c}.npz")) for c in CLASSES)
         if args.skip_train and have_agents:
             log("[1/4] Reusing the trained agents in assets/ai (--skip-train)")
         else:
             log(f"[1/4] Training {len(CLASSES)} agents x {args.episodes} runs...")
-            pool.map(_train, [(c, args.episodes, bal, False) for c in CLASSES])
+            pool.map(_train, [(c, args.episodes, bal, not args.fresh, seed0) for c in CLASSES])
             log(f"      done in {time.time() - t0:.0f}s")
         res = None
         if args.autotune:
@@ -242,14 +255,14 @@ def main():
                     res = last          # those measurements already match the saved settings
             else:
                 log("[3/4] Retraining agents on the tuned difficulty...")
-                pool.map(_train, [(c, args.episodes // 2, bal, True) for c in CLASSES])
+                pool.map(_train, [(c, args.episodes // 2, bal, True, seed0 + 7_777) for c in CLASSES])
         if res is None:
             log("[4/4] Final measurement...")
             res = measure(args.eval, bal, pool)
     log("      " + summary_line(res))
     save_balance(bal)
     write_report(res, bal, os.path.join(ASSETS, "balance_report.md"), os.path.join(ASSETS, "balance_report.json"),
-                 f"{args.episodes} training runs per class, {args.eval} test runs per class, "
+                 f"seed {seed0}, {args.episodes} training runs per class, {args.eval} test runs per class, "
                  f"{time.time() - t0:.0f}s total.")
     log(f"Wrote assets/balance.json and assets/balance_report.md ({time.time() - t0:.0f}s)")
     if args.report:

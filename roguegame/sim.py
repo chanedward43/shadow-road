@@ -162,10 +162,16 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
             run.gold_reward("fight")
             pick_item(run.reward_choices("treasure"), "reward")
         elif kind == "rest":
-            if decide("rest", ["heal", "train"]) == 0:
+            from .data import max_level
+            opts = ["heal", "train"] + (["upgrade"] if any(i.level < max_level(i.data) for i in run.all_items())
+                                        else [])
+            choice = opts[decide("rest", opts)]
+            if choice == "heal":
                 run.rest()
-            else:
+            elif choice == "train":
                 run.train()
+            else:
+                run.upgrade_random(run.rng)
         elif kind in ("event", "omen"):
             ev = omen_event(run, node["omen"]) if kind == "omen" else pick_event(run)
             valid = [(i, o) for i, o, ok in options_for(run, ev) if ok]

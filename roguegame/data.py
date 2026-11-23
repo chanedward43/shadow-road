@@ -1414,3 +1414,146 @@ def enemy_fill(eid, stage, rng):
         if i not in picks or len(shared) <= len(picks):
             picks.append(i)
     return [(iid, _fill_level(tier, s, k)) for k, iid in enumerate(picks[:n])]
+
+
+# ================================================================ v1.00 CONTENT BALANCE (from reports/v0.99)
+# With enemies carrying real gear, stage 3 became the wall (both villains ~52%, Hannya 57%, Gashadokuro 22%
+# for a regular mob) while stage-1/2 villains won only 5-14% of their fights.
+ENEMY_FILL_COUNT.update(elite=(2, 3, 3, 4), boss=(3, 4, 4, 5))        # one less item for stage-3 elites/bosses
+
+
+def _fill_level(tier, stage, k):                                       # stage-3 story gear caps at level 2
+    s = min(stage, 4)
+    top = max(1, s - 1) if tier == "mob" else (min(s, 2) if s <= 3 else 3)
+    return max(1, min(3, top - (1 if k >= 2 else 0)))
+
+
+_tune_enemy("hannya", hp=250)
+_tune_enemy("gashadokuro", hp=210)
+# stage 1-2 villains: a real test again
+_tune_enemy("kurogane", hp=215)
+_tune_enemy("gama", hp=255)
+_tune_enemy("kiyohime", hp=400)
+_tune_enemy("yuki_onna", hp=400)
+
+# over-performers (fair win-rate delta vs comparable runs)
+_tune_item("hex_scroll", hex=3)                    # +20
+_tune_item("purify_ofuda", cd=4.5)                 # +18
+_tune_item("onmyo_compass", s_curse=2)             # +12.5
+_tune_item("hitodama_wisp", cd=2.4)                # +17
+_tune_item("ronin_blade", dmg=(6, 9))              # +16.5
+_tune_item("fire_scroll", burn=4)                  # +16
+_tune_item("giant_rib", s_block=12)                # +16
+_tune_item("dragon_pearl", s_block=10)             # +14 (still)
+_tune_item("mirror_yata", s_thorns=3)              # +13 (still)
+_tune_item("yuki_breath", stun=0.5)                # +14 (still)
+# under-performers
+_tune_item("kunai", dmg=(3, 4))                    # -21
+_tune_item("tanto", dmg=(3, 5))                    # -16.5
+_tune_item("chopsticks", aura=dict(tags=("food",), heal=3, speed=0.25))        # -17.6
+_tune_item("taiko_drum", s_hp=14, aura=dict(tags=("weapon",), speed=0.25))      # -13
+_tune_item("breathing_scroll", aura=dict(tags=("weapon",), stamina_cost=-0.5, speed=0.1))   # -12.5
+_tune_item("tengu_feather_fan", dmg=(3, 5), s_evade=0.07)                        # -12.4
+_tune_item("bo_staff", dmg=(4, 6))                 # -11.7
+_tune_item("waraji", s_stamina_regen=0.35, s_evade=0.05)                        # -10.9
+_tune_item("whetstone", aura=dict(tags=("weapon",), dmg=2))                     # -11.6
+
+
+# ================================================================ v1.00 NEW CONTENT
+# Every class item serves one of its two build paths (BUILDS); shared items open cross-class archetypes.
+# --- Samurai: Daishō swarm (many weapons) / Iron fortress (armour that hits back)
+item("kenshi_oath", "Kenshi's Oath", S1, "rare", ["charm"], cls="samurai",
+     aura=dict(tags=("weapon",), dmg=1, speed=0.08), price=7)                       # swarm: every blade +1
+item("kiri_oroshi", "Kiri-oroshi Blade", V3, "rare", ["weapon"], cls="samurai", cd=2.0, dmg=(5, 8),
+     per_tag=("armor", 2), price=7)                                                 # fortress: hits harder per armour
+item("tatami_do", "Tatami-dō Armour", SQ, "epic", ["armor"], cls="samurai", s_block=14, s_thorns=3, price=11)
+item("hachiman_banner", "Hachiman's Banner", V3, "legendary", ["charm"], cls="samurai", s_hp=10,
+     aura=dict(tags=("weapon",), dmg=2, speed=0.12), price=18)                      # swarm capstone
+# --- Ninja: Throwing swarm / Fire arts
+item("senbon", "Senbon Needles", S1, "rare", ["weapon"], cls="ninja", cd=0.7, dmg=(1, 2), hits=2,
+     stamina_cost=0.3, price=6)                                                      # swarm: cheap, many hits
+item("shadow_bandolier", "Shadow Bandolier", H2, "epic", ["tool"], cls="ninja",
+     aura=dict(tags=("weapon",), speed=0.15, stamina_cost=-0.2), price=11)          # swarm engine
+item("horoku_hiya", "Hōroku-hiya Rocket", V2, "rare", ["fire"], cls="ninja", cd=3.0, dmg=(2, 3), burn=3, price=6)
+item("katon_seal", "Katon Seal", S1, "epic", ["scroll"], cls="ninja",
+     aura=dict(tags=("fire",), burn=1, speed=0.12), price=11)                        # fire engine
+# --- Kunoichi: Venom / Crit control
+item("mamushi_fang", "Mamushi Fang", V2, "rare", ["weapon", "poison"], cls="kunoichi", cd=1.2, dmg=(2, 3),
+     poison=2, price=6)
+item("wisteria_incense", "Wisteria Incense", S1, "epic", ["charm", "poison"], cls="kunoichi",
+     aura=dict(tags=("poison",), poison=1, speed=0.1), price=11)                     # venom engine
+item("mirror_hairpin", "Mirror Hairpin", V2, "rare", ["weapon"], cls="kunoichi", cd=1.1, dmg=(3, 4), crit=0.2,
+     crit_stun=0.15, price=7)                                                        # crit control: crits stun
+item("silent_tabi", "Silent-Step Tabi", H2, "epic", ["armor"], cls="kunoichi", s_crit=0.08, s_evade=0.06,
+     s_crit_poison=1, price=11)
+# --- Onmyōji: Spirit army / Curse & hex
+item("inugami_talisman", "Inugami Talisman", V2, "rare", ["summon", "charm"], cls="onmyoji", cd=5.0,
+     summon=dict(name="Inugami", dmg=(3, 5), cd=1.4), price=7)
+item("spirit_lantern", "Spirit Lantern", S1, "epic", ["charm"], cls="onmyoji",
+     aura=dict(tags=("summon",), summon_dmg=1, speed=0.12), price=11)                 # army engine
+item("omen_bell", "Bell of Ill Omen", S1, "rare", ["charm", "curse"], cls="onmyoji", cd=3.5, curse=1, hex=1, price=6)
+item("yinyang_mirror", "Yin-Yang Mirror", SQ, "epic", ["charm", "curse"], cls="onmyoji", cd=4.0, curse=2,
+     cleanse=2, s_curse=1, price=11)
+# --- Sōhei: Iron faith / Ki burst
+item("vajra_staff", "Vajra Staff", V3, "rare", ["weapon", "ki"], cls="sohei", cd=2.0, dmg=(4, 6), ki=1, price=7)
+item("iron_kesa", "Iron Kesa", SQ, "epic", ["armor"], cls="sohei", s_block=12, s_counter=2, s_thorns=2, price=11)
+item("prayer_drum", "Prayer Drum", S1, "rare", ["charm", "ki"], cls="sohei", cd=3.0, ki=2, block=3, price=6)
+item("thunder_sutra", "Thunder Sutra", H2, "legendary", ["scroll", "ki"], cls="sohei", cd=7.0, ki_burst=3,
+     stun=0.5, price=18)                                                              # ki burst capstone
+# --- shared: cross-build archetypes
+item("sake_cask", "Rice Wine Cask", SQ, "rare", ["food"], cd=5.0, heal=6, stamina_gain=1.5, price=6)   # stamina
+item("shogi_board", "Shogi Board", SQ, "epic", ["tool"], aura=dict(tags=None, speed=0.08), price=11)    # any build
+item("bamboo_shield", "Bamboo Shield", V2, "common", ["armor"], cd=4.0, block=5, price=3)              # block
+item("kusari_chain", "Kusari Chain", H3, "rare", ["weapon"], cd=1.8, dmg=(3, 5), steal_block=3, price=6)  # vs block
+titem("onigawara", "Oni-gawara Tile", S1, "rare", ["armor"], "hits_taken", n=5, block=8, price=6)      # tank
+item("herb_satchel", "Herbalist's Satchel", S1, "rare", ["tool"], cd=4.0, cleanse=2, heal=3, price=6)  # vs dots
+
+# ---- enemy-only signature moves for the new foes
+eitem("e_sandal_kick", "Sandal Kick", cd=1.1, dmg=(2, 4))
+eitem("e_faceless", "Faceless Terror", cd=4.0, curse=1, stun=0.4)
+eitem("e_wheel_fire", "Wheel of Fire", cd=2.4, dmg=(4, 6), burn=3)
+eitem("e_tidal_crush", "Tidal Crush", cd=3.0, dmg=(9, 12), stun=0.5)
+eitem("e_slit_smile", "Slit Smile", cd=1.3, dmg=(5, 7), lifesteal=0.2)
+# ---- their drops (each one is a build piece, not filler)
+loot("bakezori_sandals", "Bakezōri Sandals", H2, "rare", ["armor"], s_evade=0.06, s_stamina_regen=0.2)
+loot("faceless_mask", "Faceless Mask", S1, "rare", ["charm", "curse"], s_curse=1, s_evade=0.05)
+loot("wanyudo_spoke", "Wanyūdō Spoke", V2, "epic", ["weapon", "fire"], cd=2.2, dmg=(4, 6), burn=2)
+loot("umibozu_pearl", "Umi-bōzu Pearl", S1, "epic", ["charm"], s_regen=2, s_hp=10)
+loot("red_scissors", "Red Scissors", V2, "epic", ["weapon"], cd=1.3, dmg=(4, 6), lifesteal=0.2, crit=0.1)
+
+ENEMIES.update({
+    "bakezori": dict(name="Bakezōri", hp=48, evade=0.2, items=["e_sandal_kick"],
+                     desc="A haunted straw sandal. Quick and slippery."),
+    "nopperabo": dict(name="Nopperabō", hp=95, items=["e_faceless"],
+                      desc="The faceless one. Its terror Curses and freezes you."),
+    "wanyudo": dict(name="Wanyūdō", hp=200, items=["e_wheel_fire"],
+                    desc="A burning ox-cart wheel with a screaming face. Cleanse its Burn or bring Block."),
+    "umi_bozu": dict(name="Umi-bōzu", hp=190, regen=2, items=["e_tidal_crush"],
+                     desc="A giant of the dark sea. Slow, crushing blows that stun; it regenerates."),
+    "kuchisake": dict(name="Kuchisake-onna", hp=250, evade=0.15, items=["e_slit_smile"],
+                      desc="'Am I beautiful?' Her scissors drink your blood. Burst her down."),
+})
+ENEMY_LOOT.update(bakezori="bakezori_sandals", nopperabo="faceless_mask", wanyudo="wanyudo_spoke",
+                  umi_bozu="umibozu_pearl", kuchisake="red_scissors")
+for _eid in ("bakezori", "nopperabo", "wanyudo", "umi_bozu", "kuchisake"):
+    ENEMIES[_eid]["kit"] = [(ENEMY_LOOT[_eid], 1)]
+STAGES[1]["fights"].append("bakezori")
+STAGES[2]["fights"].append("nopperabo")
+STAGES[3]["fights"].append("wanyudo")
+STAGES[2]["elites"].append("umi_bozu")
+STAGES[3]["elites"].append("kuchisake")
+ELITE_IDS |= {"umi_bozu", "kuchisake"}
+ENDLESS_REGIONS[2]["fights"] += ["wanyudo", "nopperabo"]
+ENDLESS_REGIONS[2]["elites"] += ["umi_bozu", "kuchisake"]
+
+BUILDS["samurai"] = ["Daishō swarm: Daishō Pair, Kenshi's Oath, Battle Standard, Hachiman's Banner - more blades, each "
+                     "one stronger",
+                     "Iron fortress: Ō-yoroi, Tatami-dō, Kiri-oroshi Blade, Lacquered Sode - armour that hits back"]
+BUILDS["ninja"] = ["Throwing swarm: Shuriken, Senbon Needles, Kunai Bandolier, Shadow Bandolier - dozens of fast hits",
+                   "Fire arts: Fire Bomb, Hōroku-hiya, Katon Seal, Dragon Flame Jutsu - stacking Burn"]
+BUILDS["kunoichi"] = ["Venom: Poisoned Tea, Mamushi Fang, Wisteria Incense, Fugu Venom - Poison that never stops",
+                      "Crit control: Kaiken, Mirror Hairpin, Silent-Step Tabi, Whetted Saya - crits that poison and stun"]
+BUILDS["onmyoji"] = ["Spirit army: Paper & Fox Shikigami, Inugami Talisman, Spirit Lantern - up to 5 shikigami",
+                     "Curse & hex: Ofuda of Binding, Bell of Ill Omen, Yin-Yang Mirror, Hex of Five Elements"]
+BUILDS["sohei"] = ["Iron faith: Kesa Robe, Iron Kesa, Iron Geta, Fudō Myōō Idol - take hits, gain Ki, strike back",
+                   "Ki burst: Vajra Staff, Prayer Drum, Heart Sutra, Thunder Sutra - store Ki then release it"]

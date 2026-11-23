@@ -1,17 +1,17 @@
 {
-  "fight_mult": 1.658,
+  "fight_mult": 1.496,
   "elite_mult": 1.456,
   "boss_mult": 0.833,
   "stage_mult": {
-    "1": 0.644,
-    "2": 0.833,
-    "3": 0.866
+    "1": 0.858,
+    "2": 1.109,
+    "3": 1.153
   },
   "class_hp": {
-    "samurai": 1.238,
-    "ninja": 1.656,
-    "kunoichi": 0.739,
-    "onmyoji": 0.702,
-    "sohei": 1.401
+    "samurai": 1.75,
+    "ninja": 1.343,
+    "kunoichi": 0.602,
+    "onmyoji": 1.088,
+    "sohei": 1.207
   }
 }

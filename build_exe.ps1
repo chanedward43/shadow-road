@@ -10,7 +10,9 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed - not building." }
 
 # Only the art and balance settings ship with the game (not the 90 MB source pack or the AI tools).
 python -m PyInstaller --noconfirm --clean --windowed --name ShadowRoad `
+    --icon "assets\icon.ico" `
     --add-data "assets\art;assets\art" `
+    --add-data "assets\icon.png;assets" `
     --add-data "assets\balance.json;assets" `
     --exclude-module numpy --exclude-module PIL --exclude-module tkinter `
     main.py

@@ -28,6 +28,7 @@ def stage():
                     ignore=lambda d, names: [n for n in names if n == "__pycache__" or n in SKIP_MODULES])
     os.makedirs(os.path.join(STAGE, "assets"))
     shutil.copytree(os.path.join(ROOT, "assets", "art"), os.path.join(STAGE, "assets", "art"))
+    shutil.copy(os.path.join(ROOT, "assets", "icon.png"), os.path.join(STAGE, "assets"))
     sfx = os.path.join(ROOT, "assets", "audio", "sfx")       # sound effects go in the game bundle;
     if os.path.exists(sfx):                                   # music is downloaded on demand (see publish_music)
         shutil.copytree(sfx, os.path.join(STAGE, "assets", "audio", "sfx"))
@@ -46,8 +47,8 @@ def publish_music(out):
         src = os.path.join(ROOT, "assets", name)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(STAGE, "assets"))
-    # loading-screen / favicon image
-    shutil.copy(os.path.join(ROOT, "assets", "art", "samurai.png"), os.path.join(STAGE, "favicon.png"))
+    # the game's icon (tools/make_icon.py) is the page's favicon
+    shutil.copy(os.path.join(ROOT, "assets", "icon_256.png"), os.path.join(STAGE, "favicon.png"))
 
 
 def build(serve=False):

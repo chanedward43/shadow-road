@@ -114,6 +114,7 @@ python main.py
 | Run the tests | `python -m unittest discover tests` |
 | Build the browser version | `python tools/build_web.py` |
 | Build a Windows .exe | `powershell -ExecutionPolicy Bypass -File build_exe.ps1` |
+| Redraw the game icon (window, web page, .exe) | `python tools/make_icon.py` |
 | Train the AI and re-balance | `pip install numpy` then `python tools/balance.py --autotune` |
 
 Game design, research notes and balance details are in [DESIGN.md](DESIGN.md).

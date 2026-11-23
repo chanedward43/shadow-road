@@ -97,6 +97,7 @@ class Game:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("Shadow Road")
+        self.set_window_icon()
         self.display = pygame.display.set_mode((ui.W, ui.H))
         self.screen = pygame.Surface((ui.W, ui.H))      # scenes draw here; shaken onto the display
         self.clock = pygame.time.Clock()
@@ -114,6 +115,17 @@ class Game:
         ui.set_text_scale(1.12 if settings.get()["large_text"] else 1.0)
         self.scene = None
         self.change(LoadingScene(self))
+
+    @staticmethod
+    def set_window_icon():
+        """The game's icon (assets/icon.png, made by tools/make_icon.py) on the window and taskbar."""
+        import os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+        if os.path.exists(path):
+            try:
+                pygame.display.set_icon(pygame.image.load(path))
+            except pygame.error:
+                pass
 
     def change(self, scene):
         if WEB:

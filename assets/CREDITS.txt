@@ -1,2 +1,4 @@
 Art: Ninja Adventure Asset Pack by Pixel-Boy & AAA (CC0) - https://pixel-boy.itch.io/ninja-adventure-asset-pack
 Optional silhouette icons: game-icons.net (Lorc, Delapouite, DarkZaitzev and others), CC BY 3.0
+Weapon icons: "16x16 Weapon RPG Icons" by Shade (CC0) - https://opengameart.org/content/16x16-weapon-rpg-icons
+Most Japanese item sprites (charms, armour, food, scrolls, tools, fans...): drawn for Shadow Road (tools/make_sprites.py)

@@ -236,8 +236,17 @@ class RunState:
         while not pool and idx >= 0:
             pool = self.item_pool(RARITIES[idx])
             idx -= 1
-        weighted = [i for i in pool for _ in range(2 if i["cls"] else 1)]   # class items twice as likely
-        return self.rng.choice(weighted)["id"]
+        return self.rng.choices(pool, weights=[self.offer_weight(i) for i in pool])[0]["id"]
+
+    def offer_weight(self, d):
+        """How likely an item is to be offered: class items x2, items favoured by your class x2, items
+        favoured by other classes rarer (but they still turn up, and anyone can use them)."""
+        from .data import AFFINITY_WEIGHT
+        if d["cls"]:
+            return 2.0
+        if d.get("affinity"):
+            return AFFINITY_WEIGHT[0] if d["affinity"] == self.char_id else AFFINITY_WEIGHT[1]
+        return 1.0
 
     def shop_offers(self, n=5):
         return [self.roll_item() for _ in range(n)]
@@ -258,9 +267,20 @@ class RunState:
 
     def roll_drop(self, enemy_id, carried, rng=None):
         """What a beaten enemy drops: its signature item (chance by tier) or one of the other items
-        it was carrying, at the level it had. Returns (item_id, level, is_signature) or None."""
+        it was carrying, at the level it had. Returns (item_id, level, is_signature) or None.
+        Bosses drop ONE of everything they fought with (relic, signature item, gear); their unique pieces
+        (relics and signature) are BOSS_UNIQUE_DROP_WEIGHT times likelier than the rest."""
         rng = rng or self.rng
         signature = ENEMY_LOOT.get(enemy_id)
+        if enemy_tier(enemy_id) == "boss":
+            from .data import BOSS_UNIQUE_DROP_WEIGHT
+            pool = list(dict.fromkeys(list(carried) + ([(signature, 1)] if signature else [])))
+            pool = [(i, lvl) for i, lvl in pool if not ITEMS[i]["enemy"]]
+            if pool:
+                unique = lambda i: i == signature or ITEMS[i].get("boss_relic")
+                iid, lvl = rng.choices(pool, weights=[BOSS_UNIQUE_DROP_WEIGHT if unique(i) else 1
+                                                      for i, _ in pool])[0]
+                return iid, lvl, bool(unique(iid))
         others = [(i, lvl) for i, lvl in carried if i != signature]
         if signature and (not others or rng.random() < SIGNATURE_DROP_CHANCE[enemy_tier(enemy_id)]):
             return signature, 1, True

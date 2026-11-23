@@ -464,3 +464,27 @@ They are saved with the run, sent with Arena ghosts, and kept in match history.
   - Stage-1/2 villains got more HP.
   - Over-performing Onmyōji items and legendaries were trimmed.
   - Under-used commons were buffed.
+
+## v1.10: favoured items, villains' relics, pause menu, pinned tooltips
+- **75 favoured items** (`affinity`, 15 per class): each deepens one of its class's two build paths. Unlike
+  class items they are not locked: the favoured class sees them 2x as often, other classes 0.35x, and any class
+  can use them. Ki items give any class a 6-Ki pool, so a Ninja can splash a Ki engine.
+- **Villains' relics** (2 per boss, 18 total): each fight the boss carries one at random (and one less random
+  item). It drops ONE item from everything it fought with, relics and signature item weighted 3x.
+- **Enemy gear**: mobs now carry a class item 35% of the time; favoured items are in the shared fill pool, so
+  every tier mixes its own items, shared gear and class gear.
+- **Recipes fuse after a won battle**, not when leaving the bag screen.
+- **Endless** is no longer a mode picked up front: beating the stage-3 villain heals you fully and offers
+  *End the journey* or *Keep going into Endless* (the story win is counted once either way).
+- **Tags are enforced**: `_normalize_tags()` adds the tag for whatever an item does (Poison, Fire, Summon,
+  Curse, Ki) and a test keeps it that way. `TAG_INFO` holds the 11 tags and what each means.
+- **UI**: pause menu (Esc / top-right), Alt + right-click pins any tooltip and lets you hover its keywords,
+  technique and passive tooltips everywhere, tag chips and recipe lines in every item tooltip, enemy log on
+  the right of its panel, map drawn as a paper scroll, title/loading screen with a cherry tree and falling
+  petals, a loading bar instead of "click to start" (in the game and on the web page).
+- **AI**: every training, balancing and report run plays its own random map (`sim.run_seeds`), and the item
+  features read favoured items as half a class item. Balance was not re-run for this patch.
+- **Sprites**: every item has its own. 146 are pixel art drawn for this game from 80 templates
+  (`tools/sprite_templates.py`) with per-item colours and emblems (`tools/make_sprites.py`); 35 weapons come from
+  the CC0 *16x16 Weapon RPG Icons* sheets. Small sprites now scale to fill their tile (nearest-neighbour)
+  instead of rounding down to 1x/2x.

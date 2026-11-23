@@ -24,11 +24,16 @@ CUR = "ryō"
 class Scene:
     map_ok = False          # screens set this to show the Map button (and allow the M key)
     music = None            # music track while this screen is open (a method may pick one)
+    pausable = True         # Esc / the top-right menu button pause this screen (menus set False)
 
     def __init__(self, game):
         self.game = game
         self.buttons = []
-        self._map_btn = Button((W - 162, 7, 104, 34), "Map (M)", self.open_map, 16)   # mute is right of it
+        self._map_btn = Button((W - 206, 7, 104, 34), "Map (M)", self.open_map, 16)   # menu + mute are right of it
+
+    def wants_escape(self):
+        """True while this screen uses Esc itself (e.g. to drop a held item), so Esc doesn't pause."""
+        return False
 
     def open_map(self):
         if self.game.run is not None:
@@ -64,28 +69,39 @@ class Scene:
 
 
 def top_bar(s, run, title=""):
-    pygame.draw.rect(s, ui.PANEL, (0, 0, W, 48))
-    pygame.draw.line(s, ui.LINE, (0, 48), (W, 48), 2)
+    for y in range(48):                                   # lacquered bar: a soft vertical gradient
+        k = y / 47
+        pygame.draw.line(s, (int(38 - 12 * k), int(33 - 10 * k), int(50 - 14 * k)), (0, y), (W, y))
+    pygame.draw.line(s, (120, 96, 52), (0, 48), (W, 48), 2)
     ch = CHARACTERS[run.char_id]
-    text(s, ch["name"], (16, 11), 20, ch["color"], True)
-    text(s, f"HP {run.hp}/{run.max_hp}", (160, 11), 20, ui.RED, True)
-    text(s, f"{run.gold} {CUR}", (330, 11), 20, ui.GOLD, True)
+    r = text(s, ch["name"], (16, 12), 20, ch["color"], True)
+    hp_r = pygame.Rect(r.right + 18, 15, 120, 18)              # HP as a little bar, not just numbers
+    ui.bar(s, hp_r, run.hp / max(1, run.max_hp), ui.RED, (60, 30, 34))
+    text(s, f"{run.hp}/{run.max_hp}", hp_r.center, 14, ui.TEXT, True, center=True)
+    gr = text(s, f"{run.gold} {CUR}", (hp_r.right + 18, 12), 20, ui.GOLD, True)
+    x = gr.right + 26
     a = getattr(run, "arena", None)
     if a:
-        text(s, f"ARENA  Round {a['round']}   Wins {a['wins']}/{arena.MAX_WINS}", (460, 11), 20, ui.TEXT, True)
-        draw_hearts(s, (800, 24), arena.hearts(run))
+        rr = text(s, f"ARENA  Round {a['round']}   Wins {a['wins']}/{arena.MAX_WINS}", (x, 12), 19, ui.TEXT, True)
+        draw_hearts(s, (rr.right + 24, 25), arena.hearts(run))
     else:
         st = STAGES[run.stage]
         label = f"Endless {run.stage}" if getattr(run, "mode", "story") == "endless" else f"Stage {run.stage}/3"
         col = (240, 90, 90) if run.blood_moon_now else ui.TEXT
-        r = text(s, f"{label} - {st['name']}", (460, 11), 20, col, True)
+        name = st["name"]
+        room = W - 260 - x - (ui.font(18, True).size(title or "")[0] + 70)
+        while ui.font(19, True).size(f"{label} - {name}")[0] > room and len(name) > 8:
+            name = name[:-2]
+        if name != st["name"]:
+            name = name.rstrip() + "..."
+        r = text(s, f"{label} - {name}", (x, 12), 19, col, True)
         if run.asc:
-            text(s, f"A{run.asc}", (r.right + 12, 11), 20, (200, 140, 255), True)
+            text(s, f"A{run.asc}", (r.right + 12, 12), 19, (200, 140, 255), True)
     clock = fmt_clock(getattr(run, "play_time", 0))
     if title:
-        text(s, f"{title}   {clock}", (W - 174, 11), 20, ui.DIM, True, right=True)
+        text(s, f"{title}   {clock}", (W - 218, 13), 18, ui.DIM, True, right=True)
     else:
-        text(s, clock, (W - 174, 11), 20, ui.DIM, True, right=True)
+        text(s, clock, (W - 218, 13), 18, ui.DIM, True, right=True)
 
 
 def draw_hearts(s, pos, n, total=None, size=9):
@@ -127,16 +143,99 @@ def announce(game, unlocked):
             audio.play("achievement")
 
 
+def fuse_recipes(game, run):
+    """Recipe pairs that touch in the kit fuse after a won battle (never while you're still arranging)."""
+    for a, b, res in run.combine_recipes():
+        game.toast(f"Recipe! {ITEMS[a]['name']} + {ITEMS[b]['name']} = {ITEMS[res]['name']}", (255, 210, 120), 5)
+        audio.play("levelup")
+        progress.discover_item(res)
+
+
 def hint(game, key, msg):
     if progress.hint_once(key):
         game.toast(msg, (150, 210, 255), 8)
 
 
+_PETAL_CACHE = {}
+
+
+def _petal(size, shade):
+    key = (size, shade)
+    if key not in _PETAL_CACHE:
+        w, h = size * 2, size
+        img = pygame.Surface((w, h + 2), pygame.SRCALPHA)
+        col = ((255, 190, 210), (240, 160, 190), (215, 130, 165))[shade]
+        pygame.draw.ellipse(img, col, (0, 1, w, h))
+        pygame.draw.ellipse(img, (255, 225, 235), (w // 4, 2, w // 3, max(1, h // 3)))     # a little highlight
+        _PETAL_CACHE[key] = img
+    return _PETAL_CACHE[key]
+
+
 def draw_petals(s, t, n=45):
+    """Falling cherry blossom petals: three depths (small & slow far away, big & quick up close), each one
+    swaying side to side and turning as it falls."""
     for i in range(n):
-        x = (i * 137 + t * (14 + i % 5) * 3) % W
-        y = (i * 89 + t * (18 + i % 7) * 3) % H
-        pygame.draw.ellipse(s, (230, 150, 180) if i % 3 else (190, 110, 140), (int(x), int(y), 6, 4))
+        depth = i % 3                               # 0 far, 1 mid, 2 near
+        size = (3, 4, 6)[depth]
+        fall = (16, 26, 40)[depth] + (i * 7) % 11
+        drift = (10, 16, 24)[depth]
+        y = (i * 89 + t * fall) % (H + 40) - 20
+        x = (i * 137 + t * drift + 22 * math.sin(t * (0.6 + (i % 5) * 0.15) + i)) % (W + 40) - 20
+        ang = (t * (40 + (i * 13) % 70) + i * 37) % 360
+        img = pygame.transform.rotate(_petal(size, (i * 5) % 3), ang)
+        if depth == 0:
+            img.set_alpha(150)
+        s.blit(img, img.get_rect(center=(int(x), int(y))))
+
+
+def draw_backdrop(s, t, sun=True):
+    """Title / loading backdrop: dusk sky, rising sun, layered mountains, a cherry tree and a torii."""
+    if "sky" not in _PETAL_CACHE:
+        sky = pygame.Surface((W, H))
+        top, mid, bottom = (18, 14, 30), (64, 30, 52), (150, 70, 64)
+        for y in range(H):
+            k = y / H
+            a, b, kk = (top, mid, k / 0.55) if k < 0.55 else (mid, bottom, (k - 0.55) / 0.45)
+            pygame.draw.line(sky, tuple(int(a[i] + (b[i] - a[i]) * kk) for i in range(3)), (0, y), (W, y))
+        rng = random.Random(7)
+        for _ in range(70):                                         # a few stars high up
+            sky.set_at((rng.randrange(W), rng.randrange(int(H * 0.35))), (220, 210, 230))
+        if sun:
+            pygame.draw.circle(sky, (150, 46, 48), (W // 2, 300), 170)
+            pygame.draw.circle(sky, (196, 70, 62), (W // 2, 300), 150)
+        for col, base, amp, step in (((52, 30, 54), 470, 150, 90), ((36, 22, 40), 540, 110, 70),
+                                     ((22, 15, 26), 610, 70, 55)):
+            pts, x = [(0, H)], 0
+            while x <= W + step:
+                pts.append((x, base - rng.randint(0, amp)))
+                x += rng.randint(step // 2, step)
+            pts.append((W, H))
+            pygame.draw.polygon(sky, col, pts)
+        tc = (24, 12, 16)                                           # a torii on the far right ridge
+        pygame.draw.rect(sky, tc, (1060, 470, 10, 120))
+        pygame.draw.rect(sky, tc, (1140, 470, 10, 120))
+        pygame.draw.rect(sky, tc, (1036, 456, 138, 12))
+        pygame.draw.rect(sky, tc, (1046, 482, 118, 7))
+        trunk = (26, 14, 20)                                        # a cherry tree on the left
+        pygame.draw.polygon(sky, trunk, [(120, H), (150, 520), (170, 430), (190, 520), (210, H)])
+        for a, b, w in (((165, 470), (60, 370), 14), ((168, 450), (250, 360), 12), ((150, 520), (40, 470), 8),
+                        ((185, 500), (270, 465), 8), ((165, 430), (170, 320), 10)):
+            pygame.draw.line(sky, trunk, a, b, w)
+        for _ in range(260):                                        # blossom canopy
+            cx = rng.choice((40, 95, 150, 200, 240, 160))
+            cy = rng.choice((360, 320, 350, 370, 360, 310))
+            px, py = cx + rng.randint(-55, 55), cy + rng.randint(-50, 40)
+            pygame.draw.circle(sky, rng.choice(((232, 150, 182), (214, 120, 158), (245, 186, 206),
+                                                (190, 98, 140))), (px, py), rng.randint(4, 9))
+        _PETAL_CACHE["sky"] = sky
+    s.blit(_PETAL_CACHE["sky"], (0, 0))
+    draw_petals(s, t, 70)
+
+
+def draw_logo(s, y=150, size=88):
+    text(s, "SHADOW ROAD", (W // 2 + 4, y + 4), size, (20, 8, 12), True, center=True)
+    text(s, "SHADOW ROAD", (W // 2, y), size, ui.GOLD, True, center=True)
+    pygame.draw.line(s, (200, 150, 120), (W // 2 - 190, y + size // 2 + 14), (W // 2 + 190, y + size // 2 + 14), 2)
 
 
 def battle_numbers(run, inst):
@@ -205,9 +304,54 @@ def draw_level_compare(s, inst, area, title=None):
                 break
 
 
+# =================================================================== loading
+class LoadingScene(Scene):
+    """The first screen: the title backdrop with a loading bar while the art and sounds load, then straight
+    into the main menu (no 'click to start')."""
+    pausable = False
+
+    def __init__(self, game):
+        super().__init__(game)
+        import os
+        self.t = 0.0
+        self.keys = sorted(f[:-4] for f in os.listdir(ui.ART_DIR) if f.endswith(".png")) \
+            if os.path.isdir(ui.ART_DIR) else []
+        self.total = len(self.keys) + 1
+        self.done = 0
+        self.leaving = 0.0
+
+    def update(self, dt):
+        self.t += dt
+        if self.keys:
+            for _ in range(14):                         # a handful of sprites per frame keeps it smooth
+                if not self.keys:
+                    break
+                ui.art(self.keys.pop(), 48)
+                self.done += 1
+        elif self.done < self.total:
+            for size in (12, 13, 14, 15, 16, 17, 18, 20, 22, 24):     # warm up the fonts
+                ui.font(size), ui.font(size, True)
+            self.done = self.total
+        else:
+            self.leaving += dt
+            if self.leaving > 0.35:
+                self.game.change(TitleScene(self.game))
+
+    def draw(self, s):
+        draw_backdrop(s, self.t)
+        draw_logo(s)
+        frac = self.done / max(1, self.total)
+        r = pygame.Rect(W // 2 - 220, 560, 440, 16)
+        pygame.draw.rect(s, (20, 12, 18), r.inflate(8, 8), border_radius=10)
+        ui.bar(s, r, frac, (230, 150, 182), (50, 30, 44))
+        pygame.draw.rect(s, (120, 80, 60), r.inflate(8, 8), 2, border_radius=10)
+        text(s, "Loading..." if frac < 1 else "Ready", (W // 2, 596), 16, (230, 200, 190), True, center=True)
+
+
 # =================================================================== title
 class TitleScene(Scene):
     music = "title"
+    pausable = False
 
     def __init__(self, game):
         super().__init__(game)
@@ -234,22 +378,22 @@ class TitleScene(Scene):
         self.t += dt
 
     def draw(self, s):
-        s.fill(ui.BG)
-        draw_petals(s, self.t)
-        pygame.draw.circle(s, (70, 22, 28), (W // 2, 190), 150)        # rising sun
-        pygame.draw.circle(s, (120, 34, 40), (W // 2, 190), 150, 6)
-        text(s, "SHADOW ROAD", (W // 2 + 3, 193), 84, (20, 12, 14), True, center=True)
-        text(s, "SHADOW ROAD", (W // 2, 190), 84, ui.GOLD, True, center=True)
-        text(s, "Pack your blade. Walk the road. Cut down the demons of old Japan.", (W // 2, 296), 22,
-             ui.DIM, center=True)
-        text(s, "Art & audio: Ninja Adventure pack by Pixel-Boy & AAA (CC0)", (W // 2, H - 24), 13, ui.DIM,
-             center=True)
+        draw_backdrop(s, self.t)
+        draw_logo(s)
+        text(s, "Pack your blade. Walk the road. Cut down the demons of old Japan.", (W // 2, 300), 21,
+             (235, 215, 205), center=True)
+        shade = pygame.Surface((620, 268), pygame.SRCALPHA)           # a dark plate behind the menu
+        pygame.draw.rect(shade, (12, 8, 14, 150), shade.get_rect(), border_radius=16)
+        s.blit(shade, (W // 2 - 310, 356))
+        text(s, "Art & audio: Ninja Adventure pack by Pixel-Boy & AAA (CC0)", (W // 2, H - 20), 13,
+             (200, 180, 180), center=True)
         self.draw_buttons(s)
 
 
 # =================================================================== character select
 class CharSelectScene(Scene):
     music = "title"
+    pausable = False
 
     def __init__(self, game, arena_mode=False):
         super().__init__(game)
@@ -262,27 +406,18 @@ class CharSelectScene(Scene):
         self.begin = Button((W // 2 - 140, 640, 280, 54), "Set Out", self.start, 24, enabled=False)
         back = (lambda: game.change(ArenaLobbyScene(game))) if arena_mode else (lambda: game.change(TitleScene(game)))
         self.buttons = [self.begin, Button((20, 650, 120, 44), "Back", back)]
-        self.mode = "story"
+        self.mode = "story"              # Endless isn't picked here: it's offered once you beat stage 3
         if not arena_mode:
-            self.mode_btns = [Button((W - 340, 645, 150, 44), "Story", lambda: self.set_mode("story"), 18),
-                              Button((W - 180, 645, 160, 44), "Endless", lambda: self.set_mode("endless"), 18)]
             self.asc = 0
             self.asc_btns = [Button((160, 645, 44, 44), "<", lambda: self.step_asc(-1), 20),
                              Button((380, 645, 44, 44), ">", lambda: self.step_asc(1), 20)]
-            self.buttons += self.mode_btns + self.asc_btns
+            self.buttons += self.asc_btns
 
     def step_asc(self, d):
         if self.sel is None:
             return
         top = progress.asc_unlocked(self.ids[self.sel])
         self.asc = max(0, min(top, self.asc + d))
-
-    def set_mode(self, mode):
-        if mode == "endless" and not progress.endless_unlocked():
-            self.game.toast("Endless unlocks once you beat all 3 stages of the story.", (230, 130, 130), 3)
-            audio.play("back")
-            return
-        self.mode = mode
 
     def start(self):
         mx, my = pygame.mouse.get_pos()
@@ -311,16 +446,8 @@ class CharSelectScene(Scene):
         text(s, "Choose your Arena fighter" if self.arena_mode else "Choose your path", (W // 2, 45), 34,
              ui.TEXT, True, center=True)
         if not self.arena_mode:
-            for b in self.mode_btns:
-                b.col = (80, 70, 40) if b.label.lower() == self.mode else ui.PANEL2
-            if not progress.endless_unlocked():
-                self.mode_btns[1].label = "Endless (locked)"
-                self.mode_btns[1].col = (35, 33, 42)
-            hint = ("3 stages, then the stage-3 villain." if self.mode == "story" else
-                    "Beat stage 3, then keep going. Stage 5 brings the Blood Moon.")
-            if not progress.endless_unlocked():
-                hint = "Beat the story (all 3 stages) to unlock Endless."
-            text(s, hint, (W - 20, 618), 13, ui.GOLD if self.mode == "endless" else ui.DIM, right=True)
+            text(s, "3 stages, 3 villains. Beat the last one and you may keep walking into Endless.",
+                 (W - 20, 667), 13, ui.DIM, right=True)
             # ascension picker
             top = progress.asc_unlocked(self.ids[self.sel]) if self.sel is not None else 0
             for b in self.asc_btns:
@@ -363,6 +490,55 @@ class CharSelectScene(Scene):
 
 
 # =================================================================== map
+SCROLL_RECT = pygame.Rect(18, 56, 964, 604)
+_SCROLL_CACHE = {}
+
+
+def draw_scroll(s, rect, seed=0):
+    """An unrolled paper scroll with wooden rollers left and right. Returns the paper's inner rect."""
+    key = (rect.size, seed % 7)
+    if key not in _SCROLL_CACHE:
+        img = pygame.Surface(rect.size, pygame.SRCALPHA)
+        rng = random.Random(seed % 7)
+        paper = pygame.Rect(22, 8, rect.width - 44, rect.height - 16)
+        pygame.draw.rect(img, (226, 208, 166), paper)
+        for _ in range(900):                                    # paper fibres: short faint strokes
+            x, y = rng.randrange(paper.x, paper.right), rng.randrange(paper.y, paper.bottom)
+            pygame.draw.line(img, (196, 176, 134), (x, y), (x + rng.randint(2, 9), y + rng.randint(-1, 1)), 1)
+        for _ in range(18):                                     # a few soft, uneven stains
+            x, y = rng.randrange(paper.x, paper.right), rng.randrange(paper.y, paper.bottom)
+            w, h = rng.randint(40, 140), rng.randint(20, 70)
+            blot = pygame.Surface((w, h), pygame.SRCALPHA)
+            pygame.draw.ellipse(blot, (160, 128, 84, 10), blot.get_rect())
+            img.blit(blot, (x - w // 2, y - h // 2))
+        for k in range(12):                                     # slightly darker, aged edges
+            edge = pygame.Rect(paper.x + k, paper.y + k, paper.width - 2 * k, paper.height - 2 * k)
+            pygame.draw.rect(img, (140, 104, 64, 6 * (12 - k)), edge, 1)
+        for x in (0, rect.width - 26):                          # wooden rollers with knobs
+            roller = pygame.Rect(x, 0, 26, rect.height)
+            pygame.draw.rect(img, (82, 48, 30), roller, border_radius=10)
+            pygame.draw.rect(img, (122, 76, 46), roller.inflate(-14, -4), border_radius=6)
+            pygame.draw.rect(img, (48, 28, 18), roller, 2, border_radius=10)
+            for yy in (0, rect.height - 10):
+                pygame.draw.rect(img, (196, 150, 70), (x + 3, yy, 20, 10), border_radius=4)
+        _SCROLL_CACHE[key] = img
+    s.blit(_SCROLL_CACHE[key], rect.topleft)
+    return pygame.Rect(rect.x + 22, rect.y + 8, rect.width - 44, rect.height - 16)
+
+
+def dashed_line(s, col, a, b, width=2, dash=8, gap=6):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    dist = math.hypot(dx, dy)
+    if dist < 1:
+        return
+    ux, uy = dx / dist, dy / dist
+    t = 0.0
+    while t < dist:
+        e = min(dist, t + dash)
+        pygame.draw.line(s, col, (a[0] + ux * t, a[1] + uy * t), (a[0] + ux * e, a[1] + uy * e), width)
+        t += dash + gap
+
+
 NODE_STYLE = {
     "fight": ((150, 70, 70), "Fight"), "elite": ((200, 60, 160), "Elite"),
     "shop": ((220, 180, 80), "Merchant"), "rest": ((90, 170, 110), "Onsen"),
@@ -405,14 +581,17 @@ class MapScene(Scene):
     def go_back(self):
         self.game.change(self.back)
 
+    def wants_escape(self):
+        return self.back is not None                # viewing from another screen: Esc returns there
+
     def open_bag(self):
         self.game.change(InventoryScene(self.game, "manage", on_done=lambda: MapScene(self.game)))
 
     def node_pos(self, r, node):
-        if self.arena:                              # the arena floor: spread its rows across the screen
-            step = 800 / max(1, len(self.run.map) - 1)
-            return int(110 + r * step), int(140 + node["x"] * 450)
-        return int(100 + r * 140), int(130 + node["x"] * 470)
+        if self.arena:                              # the arena floor: spread its rows across the scroll
+            step = 780 / max(1, len(self.run.map) - 1)
+            return int(110 + r * step), int(160 + node["x"] * 440)
+        return int(104 + r * 132), int(150 + node["x"] * 450)
 
     def node_at(self, pos, only_available=True):
         nodes = self.run.available_nodes() if only_available else \
@@ -495,93 +674,120 @@ class MapScene(Scene):
         run = self.run
         top_bar(s, run, "Choose your path" if self.back is None else "Map (viewing)")
         st = STAGES[run.stage]
+        paper = draw_scroll(s, SCROLL_RECT, seed=run.seed + run.stage)
+        ink, faint = (58, 38, 26), (120, 96, 70)
         if self.arena:
-            text(s, f"Arena floor - round {self.arena['round']}", (30, 58), 24, ui.GOLD, True)
+            text(s, f"Arena floor - round {self.arena['round']}", (paper.x + 30, paper.y + 12), 24, ink, True)
             text(s, "Floor fights are practice: lose and you only miss the rewards. The ghost duel counts.",
-                 (30, 88), 15, ui.DIM)
+                 (paper.x + 30, paper.y + 42), 14, faint)
         else:
-            text(s, st["name"], (30, 58), 24, ui.GOLD, True)
-            text(s, st["subtitle"], (30, 88), 15, ui.DIM)
+            text(s, st["name"], (paper.x + 30, paper.y + 12), 24, (140, 30, 30) if run.blood_moon_now else ink, True)
+            text(s, st["subtitle"], (paper.x + 30, paper.y + 42), 14, faint)
         avail = set(run.available_nodes())
-        for r, row in enumerate(run.map[:-1]):
+        for r, row in enumerate(run.map[:-1]):             # roads: dashed ink, the road you took in red
             for node in row:
-                a = self.node_pos(r, node)
+                a_ = self.node_pos(r, node)
                 for j in node["links"]:
-                    b = self.node_pos(r + 1, run.map[r + 1][j])
+                    b_ = self.node_pos(r + 1, run.map[r + 1][j])
                     on_path = node.get("visited") and run.map[r + 1][j].get("visited")
-                    pygame.draw.line(s, ui.GOLD if on_path else ui.LINE, a, b, 3 if on_path else 2)
+                    if on_path:
+                        pygame.draw.line(s, (160, 40, 36), a_, b_, 4)
+                    else:
+                        dashed_line(s, (130, 104, 78), a_, b_, 2, 9, 7)
         for r, row in enumerate(run.map):
             for c, node in enumerate(row):
                 x, y = self.node_pos(r, node)
                 col, label = NODE_STYLE[node["kind"]]
-                rad = 36 if node["kind"] == "boss" else 27
+                rad = 34 if node["kind"] == "boss" else 25
                 is_av = (r, c) in avail
-                if is_av:
+                if is_av:                                   # a pulsing brush ring around where you can go
                     pulse = 4 + 3 * math.sin(self.t * 5)
-                    pygame.draw.circle(s, ui.GOLD, (x, y), int(rad + pulse), 2)
+                    pygame.draw.circle(s, (170, 40, 36), (x, y), int(rad + 3 + pulse), 3)
                 dim = not is_av and not node.get("visited")
-                fill = tuple(v // 3 for v in col) if dim else col
+                fill = tuple(int(v * 0.55 + 222 * 0.45) for v in col) if dim else col
                 if node.get("visited"):
-                    fill = (60, 56, 70)
+                    fill = (176, 160, 128)
+                pygame.draw.circle(s, (70, 50, 34), (x + 2, y + 3), rad)             # stamp shadow
                 pygame.draw.circle(s, fill, (x, y), rad)
-                pygame.draw.circle(s, ui.TEXT if is_av else ui.LINE, (x, y), rad, 2)
+                pygame.draw.circle(s, ink if is_av else (110, 86, 62), (x, y), rad, 3 if is_av else 2)
                 key = OMENS[node["omen"]]["art"] if node["kind"] == "omen" else NODE_ART.get(node["kind"], "")
                 pic = ui.art(key, int(rad * 1.25))
                 if pic:
-                    if dim:
+                    if dim or node.get("visited"):
                         pic = pic.copy()
-                        pic.set_alpha(110)
+                        pic.set_alpha(120)
                     s.blit(pic, pic.get_rect(center=(x, y)))
-                    if (is_av and node["kind"] != "boss") or (node["kind"] == "omen" and not node.get("visited")):
-                        text(s, label, (x, y + rad + 11), 12, (240, 200, 80) if node["kind"] == "omen" else ui.TEXT,
-                             True, center=True)
                 else:
-                    text(s, label, (x, y), 12 if len(label) > 6 else (18 if rad > 30 else 14), ui.TEXT, True,
-                         center=True)
+                    text(s, label, (x, y), 12 if len(label) > 6 else 16, ink, True, center=True)
+                if node.get("visited"):                     # a brush tick on places you've been
+                    pygame.draw.lines(s, (150, 36, 32), False, [(x - 10, y), (x - 3, y + 8), (x + 11, y - 9)], 4)
+                if (is_av and node["kind"] != "boss") or (node["kind"] == "omen" and not node.get("visited")):
+                    lab = ui.font(13, True).render(label, True, (250, 240, 220))
+                    plate = lab.get_rect(center=(x, y + rad + 13)).inflate(10, 4)
+                    pygame.draw.rect(s, (150, 40, 36) if node["kind"] == "omen" else (70, 48, 32), plate,
+                                     border_radius=5)
+                    s.blit(lab, lab.get_rect(center=plate.center))
         # boss name under the boss node (readability: you always know what you're preparing for)
         bx, by = self.node_pos(len(run.map) - 1, run.map[-1][0])
-        if self.arena:
-            text(s, "Ghost duel", (bx, by + 50), 15, ui.RED, True, center=True)
-        else:
-            boss = ENEMIES[run.boss_id()]
-            text(s, boss["name"].split(",")[0], (bx, by + 50), 15, ui.RED, True, center=True)
+        boss_label = "Ghost duel" if self.arena else ENEMIES[run.boss_id()]["name"].split(",")[0]
+        lab = ui.font(15, True).render(boss_label, True, (250, 235, 220))
+        plate = lab.get_rect(center=(bx, by + 52)).inflate(14, 6)
+        pygame.draw.rect(s, (150, 32, 30), plate, border_radius=6)
+        s.blit(lab, lab.get_rect(center=plate.center))
 
         # right column: legend + techniques + hovered node info
-        lx, ly = W - 250, 62
+        lx, ly = W - 262, 64
+        mouse = pygame.mouse.get_pos()
         tips = {"fight": "Enemy", "elite": "Tough foe + technique", "shop": "Buy & sell",
-                "rest": "Heal or train", "treasure": "Free item", "event": "Mystery event",
+                "rest": "Heal, train or upgrade", "treasure": "Free item", "event": "Mystery event",
                 "boss": "Stage villain", "omen": "Your past returns", "forge": "Level up an item",
                 "bounty": "Free ryō", "dojo": "+4 max HP", "soul": "Bind a spirit (free)"}
         if self.arena:
             tips.update(fight="Practice fight", elite="Hard practice", boss="Ghost duel (counts!)")
         present = {n["kind"] for row in run.map for n in row}
         legend = [(k, v) for k, v in NODE_STYLE.items() if k in present]   # only what's on this map
-        panel(s, (lx - 10, ly - 6, 240, 14 + 31 * len(legend)))
+        panel(s, (lx - 10, ly - 6, 254, 34 + 28 * len(legend)))
+        text(s, "LEGEND", (lx + 2, ly + 2), 13, ui.DIM, True)
         for i, (k, (col, label)) in enumerate(legend):
-            yy = ly + 4 + i * 31
-            pygame.draw.circle(s, col, (lx + 12, yy + 9), 10)
-            text(s, f"{label}: {tips[k]}", (lx + 30, yy), 14, ui.DIM)
-        y = ly + 30 + 31 * len(legend)
-        text(s, "Techniques", (lx, y), 18, ui.TEXT, True)
-        y += 26
+            yy = ly + 26 + i * 28
+            pygame.draw.circle(s, col, (lx + 12, yy + 9), 9)
+            pygame.draw.circle(s, (20, 16, 24), (lx + 12, yy + 9), 9, 1)
+            r_ = text(s, label, (lx + 30, yy), 14, ui.TEXT, True)
+            text(s, tips[k], (r_.right + 8, yy + 1), 13, ui.DIM)
+        y = ly + 40 + 28 * len(legend)
+        text(s, "TECHNIQUES", (lx, y), 15, ui.GREEN, True)
+        y += 24
+        tech_tip = None
         if not run.techniques:
             none = ("None yet. You learn one at rounds 3, 6 and 9." if self.arena else
                     "None yet. Defeat elites and bosses to learn them.")
-            y = text_block(s, none, (lx, y), 225, 14, ui.DIM)
+            y = text_block(s, none, (lx, y), 240, 14, ui.DIM)
         for tid in run.techniques:
-            text(s, "- " + TECHNIQUES[tid]["name"], (lx, y), 15, ui.GOLD)
-            y += 20
-        hov = self.node_at(pygame.mouse.get_pos(), only_available=False)
+            rr = text(s, TECHNIQUES[tid]["name"], (lx + 4, y), 15, ui.GOLD, True)
+            if rr.inflate(8, 4).collidepoint(mouse):
+                pygame.draw.line(s, ui.GOLD, (rr.x, rr.bottom), (rr.right, rr.bottom), 1)
+                tech_tip = tid
+            y += 22
+        if run.techniques:
+            text(s, "Hover a technique to read it.", (lx, y + 2), 12, ui.DIM)
+            y += 18
+        hov = self.node_at(mouse, only_available=False)
         if hov and self.run.node(hov)["kind"] in ("boss", "elite"):
             kind = self.run.node(hov)["kind"]
             names = [run.boss_id()] if kind == "boss" else st["elites"]
             y += 12
             for eid in names:
                 e = ENEMIES[eid]
-                text(s, e["name"], (lx, y), 15, ui.RED, True)
-                y = text_block(s, e.get("desc", ""), (lx, y + 20), 225, 13, ui.DIM) + 6
-        text(s, f"Battles won: {run.battles_won}    Seed {run.seed}", (30, H - 40), 16, ui.DIM)
+                if y > H - 140:
+                    break
+                y = text_block(s, e["name"], (lx, y), 240, 15, ui.RED, bold=True)
+                y = text_block(s, e.get("desc", ""), (lx, y + 2), 240, 13, ui.DIM) + 8
+        text(s, f"Battles won: {run.battles_won}    Seed {run.seed}", (30, H - 44), 15, ui.DIM)
         self.draw_buttons(s)
+        if tech_tip:
+            d = TECHNIQUES[tech_tip]
+            ui.draw_info_tip(s, d["name"], d["desc"], ui.GREEN, mouse,
+                             sub="Endless technique" if d.get("endless") else "Technique - lasts the whole run")
 
 
 # =================================================================== inventory / shop / reward
@@ -611,7 +817,7 @@ class InventoryScene(Scene):
         self.bag_o = (30, 300)
         self.stash_o = (470, 300)
         self.sell_rect = pygame.Rect(470, 540, 6 * CELL, 70)
-        self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 172) for i in range(len(self.offers))]
+        self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 164) for i in range(len(self.offers))]
         label = {"manage": "Done", "shop": "Leave", "reward": "Continue"}[mode]
         if getattr(self.run, "arena", None) and mode == "shop":
             label = "Back to the floor"
@@ -639,12 +845,10 @@ class InventoryScene(Scene):
     def done(self):
         if self.held:
             self.return_held()
-        for a, b, res in self.run.combine_recipes():          # touching recipe pairs fuse on the way out
-            self.game.toast(f"Recipe! {ITEMS[a]['name']} + {ITEMS[b]['name']} = {ITEMS[res]['name']}",
-                            (255, 210, 120), 5)
-            audio.play("levelup")
-            progress.discover_item(res)
         self.game.change(self.on_done())
+
+    def wants_escape(self):
+        return self.held is not None              # Esc puts a held item back first
 
     def reroll_cost(self):
         return 1 + self.run.rerolls // 2
@@ -655,7 +859,7 @@ class InventoryScene(Scene):
             self.run.gold -= c
             self.run.rerolls += 1
             self.offers = self.run.shop_offers()
-            self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 172) for i in range(len(self.offers))]
+            self.offer_rects = [pygame.Rect(30 + i * 162, 92, 152, 164) for i in range(len(self.offers))]
 
     def say(self, msg):
         self.flash_msg, self.flash_t = msg, 2.5
@@ -986,8 +1190,10 @@ class InventoryScene(Scene):
                         self.highlight[nb.uid] = ui.GREEN
                 rec = recipes_for(inst.id)
                 if rec:
-                    lines = "  ".join(f"Recipe: next to {ITEMS[p]['name']} = {ITEMS[r]['name']}." for p, r in rec)
-                    hover_tip = hover_tip[:3] + (((hover_tip[3] + " ") if hover_tip[3] else "") + lines,)
+                    ready = [p_ for p_, _ in rec if in_bag and any(nb.id == p_ for nb in run.bag.neighbors(inst))]
+                    if ready:
+                        msg = f"Touching {ITEMS[ready[0]]['name']}: they fuse after your next battle."
+                        hover_tip = hover_tip[:3] + (((hover_tip[3] + " ") if hover_tip[3] else "") + msg,)
                     if in_bag:
                         for nb in run.bag.neighbors(inst):
                             if any(nb.id == p for p, _ in rec):
@@ -1034,7 +1240,8 @@ class InventoryScene(Scene):
                 pygame.draw.rect(s, (190, 150, 255), bx, border_radius=5)
                 text(s, "RECIPE", bx.center, 12, (30, 16, 40), True, center=True)
                 inst, res = partners[0]
-                notes.append(f"Recipe: put it next to your {ITEMS[inst.id]['name']} = {ITEMS[res]['name']}.")
+                notes.append(f"Recipe: put it next to your {ITEMS[inst.id]['name']} and after your next battle "
+                             f"they fuse into {ITEMS[res]['name']}.")
             if hov:
                 hover_tip = (iid, None, run.price(iid) if self.mode == "shop" else None, " ".join(notes) or None)
                 for m in mates:                               # show which of your items it would work with
@@ -1060,8 +1267,8 @@ class InventoryScene(Scene):
                 cons_tip = c
         if any(o and (any(i.id == o and i.level == 1 for i in run.all_items()) or
                       any(i.id == p_ for p_, _ in recipes_for(o) for i in run.all_items())) for o in self.offers):
-            text(s, "MERGE = you own a copy to level up.  RECIPE = combines with an item you own. Hover to see which.",
-                 (30, 268), 13, ui.DIM)
+            text(s, "MERGE = you own a copy to level up.   RECIPE = fuses with an item you own (after a battle). "
+                    "Hover to see which.", (30, 259), 12, ui.DIM)
         if not self.offers:
             text(s, "Arrange your kit. Only items on the TATAMI are equipped and fight for you.", (30, 70), 18,
                  ui.DIM)
@@ -1362,7 +1569,7 @@ class BattleScene(Scene):
                 if ci.uid in by_uid:
                     self.e_map[id(ci)] = by_uid[ci.uid]
             return
-        self.e_grid = Grid(7, 3)
+        self.e_grid = Grid(7, 5)
         for ci in self.ef.items:
             self.place_enemy_item(ci)
         for iid, lvl in self.ef.carried:  # passive items they carry (no cooldown)
@@ -1413,6 +1620,7 @@ class BattleScene(Scene):
                 g.toast("Defeated - no rewards, but no heart lost.", (230, 130, 130), 4)
                 g.change(MapScene(g))
                 return
+            fuse_recipes(g, run)
             gold = run.gold_reward(self.kind)
             g.change(InventoryScene(g, "reward", offers=run.reward_choices(self.kind),
                                     on_done=lambda: MapScene(g), title="Spoils",
@@ -1431,11 +1639,13 @@ class BattleScene(Scene):
             return
         run.battles_won += 1
         run.kills.append(self.enemy_id)
+        fuse_recipes(g, run)                                 # touching recipe pairs fuse after a won battle
         gold = run.gold_reward(self.kind)
         rolled = run.roll_drop(self.enemy_id, self.ef.carried)
         drop, dlvl, signature = rolled if rolled else (None, 1, False)
-        if self.kind == "boss" and run.stage >= 3 and run.mode != "endless":
-            g.change(EndScene(g, True))
+        if self.kind == "boss" and run.stage == 3 and run.mode != "endless":
+            run.hp = run.max_hp                              # the final villain falls: fully healed
+            g.change(EndlessChoiceScene(g))
             return
 
         def after_reward():
@@ -1459,7 +1669,9 @@ class BattleScene(Scene):
             elif drop:
                 got = run.add_item(drop, level=dlvl)
                 what = ITEMS[drop]["name"] + (f" (level {dlvl})" if dlvl > 1 else "")
-                if signature:
+                if ITEMS[drop].get("boss_relic"):
+                    what = "its relic, " + what
+                elif signature:
                     what = "its signature " + what
                 msg = (f"+{gold} {CUR}. It dropped {what}"
                        + (" (in your chest)." if got else " but you had no room!") + " Now take one more.")
@@ -1662,10 +1874,10 @@ class BattleScene(Scene):
         elif side == 1:
             desc = ENEMIES[self.enemy_id].get("desc")
             if desc:
-                text_block(s, desc, (r.x + 20, r.y + 172), r.width - 40, 14, (210, 150, 150))
+                text_block(s, desc, (r.x + 20, r.y + 160), r.width - 40, 13, (210, 150, 150), spacing=2)
         tip = self.draw_kit(s, side, f, (r.x + 20, r.y + 228), mouse)
-        if side == 0:
-            self.draw_log(s, pygame.Rect(r.x + 318, r.y + 220, r.width - 338, 325), side=0, title="YOUR LOG")
+        self.draw_log(s, pygame.Rect(r.x + 318, r.y + 220, r.width - 338, 325), side=side,
+                      title="YOUR LOG" if side == 0 else "ENEMY LOG")
         # phase markers on the HP bar
         for ph in f.phases:
             if not ph["done"]:
@@ -1673,11 +1885,10 @@ class BattleScene(Scene):
                 pygame.draw.line(s, ui.GOLD, (px, r.y + 56), (px, r.y + 90), 3)
                 text(s, "PHASE", (px, r.y + 46), 11, ui.GOLD, True, center=True)
         if side == 1:
-            self.draw_log(s, pygame.Rect(r.x + 20, r.y + 390, r.width - 40, 155), side=1, title="ENEMY LOG")
             nxt = next((ph for ph in f.phases if not ph["done"]), None)
             if nxt:
-                text(s, f"Transforms at {int(f.max_hp * nxt['at'])} HP", (r.right - 30, r.y + 396), 13, ui.GOLD, True,
-                     right=True)
+                text(s, f"Transforms at {int(f.max_hp * nxt['at'])} HP", (r.x + 20, r.bottom - 26), 13, ui.GOLD,
+                     True)
         return tip
 
     def draw_traits(self, s, side, x, y):
@@ -1770,7 +1981,16 @@ class BattleScene(Scene):
         rows = (area.height - 30) // lh
         y = area.y + 28
         entries = [e for e in self.battle.log if side is None or e["side"] == side]
-        for e in entries[-rows:]:
+        # newest at the bottom: take entries from the end until the panel is full (long ones wrap to 2 lines)
+        shown, used = [], 0
+        for e in reversed(entries):
+            need = 1 if "phase" in e["delta"] else (2 if len(e["name"][:16]) + len(short_delta(e["delta"])) > 30
+                                                   else 1)
+            if used + need > rows:
+                break
+            shown.append(e)
+            used += need
+        for e in reversed(shown):
             who = (150, 200, 255) if e["side"] == 0 else (240, 140, 140)
             if "phase" in e["delta"]:
                 text(s, f"{e['t']:5.1f}  {e['delta']['phase']}", (area.x + 8, y), 13, ui.GOLD, True)
@@ -1779,9 +1999,9 @@ class BattleScene(Scene):
             text(s, f"{e['t']:5.1f}", (area.x + 8, y), 12, ui.DIM)
             name = e["name"] if len(e["name"]) <= 16 else e["name"][:15] + "."
             nr = text(s, name, (area.x + 46, y), 13, who, True)
-            ui.rich_text_block(s, short_delta(e["delta"]), (nr.right + 6, y), area.right - nr.right - 12, 13,
-                               ui.TEXT)
-            y += lh
+            end = ui.rich_text_block(s, short_delta(e["delta"]), (nr.right + 6, y), area.right - nr.right - 12, 13,
+                                     ui.TEXT, spacing=1)
+            y = max(y + lh, end + 1)
 
     def draw_keyword_tip(self, s, key, mouse):
         from .keywords import KEYWORDS
@@ -1948,16 +2168,12 @@ class BattleScene(Scene):
         else:
             for rr, key in self.status_hits:
                 if rr.collidepoint(mouse):
-                    self.draw_keyword_tip(s, key, mouse)
+                    ui.draw_keyword_popup(s, key, mouse)
                     break
             for rr, name, desc, col in self.trait_hits:
                 if rr.collidepoint(mouse):
-                    lines = ui.wrap(desc, 14, 300)
-                    h = 40 + 19 * len(lines)
-                    box = pygame.Rect(min(mouse[0] + 14, W - 330), min(mouse[1] + 14, H - h - 4), 320, h)
-                    panel(s, box, ui.PANEL, col)
-                    text(s, name, (box.x + 12, box.y + 8), 16, col, True)
-                    ui.text_block(s, desc, (box.x + 12, box.y + 32), 296, 14, ui.TEXT, spacing=5)
+                    sub_ = "Class passive" if name == "Passive" else "Technique - lasts the whole run"
+                    ui.draw_info_tip(s, name if name != "Passive" else "Class passive", desc, col, mouse, sub=sub_)
                     break
         if self.finished and self.show_summary:
             self.draw_summary(s)
@@ -2004,13 +2220,26 @@ class RestScene(Scene):
         self.game.change(UpgradePickScene(self.game, lambda: MapScene(self.game),
                                           "The onsen smithy: choose an item to level up"))
 
+    def update(self, dt):
+        self.t = getattr(self, "t", 0.0) + dt
+
     def draw(self, s):
-        s.fill(ui.BG)
+        t = getattr(self, "t", 0.0)
+        draw_backdrop(s, t)
+        shade = pygame.Surface((W, H), pygame.SRCALPHA)
+        shade.fill((10, 8, 16, 120))
+        s.blit(shade, (0, 0))
         top_bar(s, self.run, "Mountain onsen")
-        pygame.draw.ellipse(s, (60, 110, 140), (W // 2 - 160, 250, 320, 80))
-        for i in range(6):  # steam
-            x = W // 2 - 100 + i * 40
-            pygame.draw.arc(s, (200, 200, 210), (x, 170 + (i % 2) * 15, 30, 70), 1.2, 4.5, 3)
+        rocks = (64, 58, 66)
+        for k in range(9):                                   # stones around the hot spring
+            ang = k * 0.7
+            pygame.draw.ellipse(s, rocks, (W // 2 - 190 + k * 42, 246 + int(8 * math.sin(ang)), 52, 30))
+        pygame.draw.ellipse(s, (60, 120, 150), (W // 2 - 170, 252, 340, 78))
+        pygame.draw.ellipse(s, (110, 170, 190), (W // 2 - 120, 266, 120, 18), 2)
+        for i in range(7):                                   # drifting steam
+            x = W // 2 - 120 + i * 40 + int(6 * math.sin(t * 1.3 + i))
+            y = 160 + (i % 2) * 15 - int((t * 12 + i * 9) % 20)
+            pygame.draw.arc(s, (210, 210, 220), (x, y, 30, 74), 1.2, 4.5, 3)
         msg = ("The last onsen before the villain. Choose one: rest, train, or have the smithy temper your gear."
                if self.before_boss else "Steam rises from a mountain hot spring. Choose one: rest, train, or upgrade.")
         text(s, msg, (W // 2, 362), 20, ui.GOLD if self.before_boss else ui.DIM, center=True)
@@ -2046,8 +2275,10 @@ class StageScene(Scene):
         self.t += dt
 
     def draw(self, s):
-        s.fill(ui.BG)
-        draw_petals(s, self.t, 25)
+        draw_backdrop(s, self.t)
+        shade = pygame.Surface((W, H), pygame.SRCALPHA)
+        shade.fill((10, 6, 14, 165))
+        s.blit(shade, (0, 0))
         run = self.run
         st = STAGES[run.stage]
         boss = ENEMIES[run.boss_id()]
@@ -2064,9 +2295,12 @@ class StageScene(Scene):
         text(s, label, (W // 2, 200), 30, (240, 110, 110) if moon else ui.DIM, True, center=True)
         text(s, st["name"], (W // 2, 265), 56, (240, 80, 80) if moon else ui.GOLD, True, center=True)
         text(s, st["subtitle"], (W // 2, 325), 20, ui.DIM, center=True)
-        text(s, f"Rumours speak of {boss['name']}.", (W // 2, 380), 20, ui.RED, True, center=True)
-        text_block(s, boss.get("desc", ""), (W // 2 - 300, 412), 600, 16, ui.DIM)
-        y = 470
+        text(s, f"Rumours speak of {boss['name']}.", (W // 2, 380), 20, (240, 110, 110), True, center=True)
+        y = 412
+        for ln in ui.wrap(boss.get("desc", ""), 16, 640):
+            text(s, ln, (W // 2, y + 10), 16, (205, 190, 200), center=True)
+            y += 22
+        y = max(470, y + 12)
         if not self.first:
             msg = "You recovered 30% HP on the journey."
             if run.stage >= 4:
@@ -2082,7 +2316,59 @@ class StageScene(Scene):
         self.draw_buttons(s)
 
 
+class EndlessChoiceScene(Scene):
+    """The stage-3 villain is dead and you're back at full HP: end the journey here (a story victory), or keep
+    walking into Endless (stage 4, the Blood Moon at stage 5, then the Endless Night)."""
+    pausable = False
+
+    def __init__(self, game):
+        super().__init__(game)
+        self.run = game.run
+        self.t = 0.0
+        save.save_run(self.run)
+        self.buttons = [Button((W // 2 - 330, 520, 310, 64), "End the journey (victory)", self.finish, 20),
+                        Button((W // 2 + 20, 520, 310, 64), "Keep going into Endless", self.endless, 20,
+                               col=(90, 40, 46))]
+
+    def music(self):
+        return "title"
+
+    def finish(self):
+        self.game.change(EndScene(self.game, True))
+
+    def endless(self):
+        run = self.run
+        run.mode = "endless"
+        announce(self.game, progress.on_run_end(run, True, record=False))   # the story win still counts
+        run.next_stage()
+        audio.play("phase")
+        self.game.change(StageScene(self.game))
+
+    def update(self, dt):
+        self.t += dt
+
+    def draw(self, s):
+        draw_backdrop(s, self.t)
+        run = self.run
+        villain = ENEMIES[run.boss_of.get(3, "ashura")]["name"].split(",")[0]
+        plate = pygame.Surface((860, 440), pygame.SRCALPHA)
+        pygame.draw.rect(plate, (12, 8, 14, 190), plate.get_rect(), border_radius=18)
+        s.blit(plate, (W // 2 - 430, 110))
+        text(s, "VICTORY", (W // 2, 170), 64, ui.GOLD, True, center=True)
+        text(s, f"{villain} falls. Dawn returns to the land.", (W // 2, 228), 21, ui.TEXT, center=True)
+        text(s, f"Your wounds close: HP {run.hp}/{run.max_hp}.", (W // 2, 268), 18, ui.GREEN, True, center=True)
+        text_block(s, "The story ends here - or the road goes on. Endless keeps your kit, techniques and ryō: "
+                      "stage 4 is the Yomi Pass, the Blood Moon rises at stage 5, and the Endless Night never ends. "
+                      "Each new stage brings a Second Wind (more max HP).", (W // 2 - 360, 310), 720, 17,
+                   (225, 210, 200), spacing=6)
+        text(s, "Ending now records a story victory. Going on records it too - and then how far you get.",
+             (W // 2, 470), 14, ui.DIM, center=True)
+        self.draw_buttons(s)
+
+
 class EndScene(Scene):
+    pausable = False
+
     def __init__(self, game, won):
         super().__init__(game)
         save.clear_run()   # the run is over: no continuing a finished run
@@ -2340,6 +2626,7 @@ class EventScene(Scene):
 
 # =================================================================== match history
 class MatchHistoryScene(Scene):
+    pausable = False
     """Past runs (kept in this browser / on this PC across game updates): a list on the left,
     the selected run's path, final kit and cause of death on the right."""
     ROW_H = 58
@@ -2347,8 +2634,8 @@ class MatchHistoryScene(Scene):
 
     def __init__(self, game, tab="adventure"):
         super().__init__(game)
-        self.tab_btns = [Button((W - 330, 14, 150, 38), "Adventure", lambda: self.set_tab("adventure"), 17),
-                         Button((W - 172, 14, 150, 38), "Arena", lambda: self.set_tab("arena"), 17)]
+        self.tab_btns = [Button((W - 386, 14, 150, 38), "Adventure", lambda: self.set_tab("adventure"), 17),
+                         Button((W - 228, 14, 150, 38), "Arena", lambda: self.set_tab("arena"), 17)]
         self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)] + \
             self.tab_btns
         self.seed_btn = Button((W - 250, 650, 230, 48), "Play this seed", self.play_seed, 20)
@@ -2698,6 +2985,7 @@ def arena_next_round(game):
 
 
 class ArenaLobbyScene(Scene):
+    pausable = False
     """Rules, your name, your best run, and this version's leaderboard."""
     music = "arena"
 
@@ -2946,6 +3234,7 @@ class ArenaResultScene(Scene):
 
 
 class ArenaEndScene(Scene):
+    pausable = False
     def __init__(self, game):
         super().__init__(game)
         self.run = run = game.run
@@ -3000,9 +3289,12 @@ class SettingsScene(Scene):
             ("shake", "Screen shake"), ("colorblind", "Colour-blind palette"), ("large_text", "Larger text"),
             ("hints", "First-time tips")]
 
-    def __init__(self, game):
+    pausable = False
+
+    def __init__(self, game, back=None):
         super().__init__(game)
-        self.buttons = [Button((W // 2 - 110, 620, 220, 54), "Back", lambda: game.change(TitleScene(game)), 22),
+        self.back = back or (lambda: game.change(TitleScene(game)))
+        self.buttons = [Button((W // 2 - 110, 620, 220, 54), "Back", lambda: self.back(), 22),
                         Button((W // 2 + 150, 548, 200, 40), "Show tips again", self.reset_hints, 16)]
         self.row_btns = []
         for i, (key, _) in enumerate(self.ROWS):
@@ -3037,7 +3329,7 @@ class SettingsScene(Scene):
 
     def handle(self, ev):
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.game.change(TitleScene(self.game))
+            self.back()
             return True
         return super().handle(ev)
 
@@ -3073,6 +3365,7 @@ class SettingsScene(Scene):
 
 # =================================================================== achievements & stats
 class AchievementsScene(Scene):
+    pausable = False
     music = "title"
 
     def __init__(self, game):
@@ -3151,17 +3444,19 @@ class CompendiumScene(Scene):
     """Every item, enemy and recipe. Things you haven't met yet are dark silhouettes."""
     music = "title"
     TABS = ("Items", "Enemies", "Recipes")
+    pausable = False
 
-    def __init__(self, game):
+    def __init__(self, game, back=None):
         super().__init__(game)
+        self.back = back or (lambda: game.change(TitleScene(game)))
         self.tab = "Items"
         self.filter = None                  # class id / "shared" / None
-        self.tab_btns = [Button((W - 520 + i * 168, 16, 160, 38), t, lambda t=t: self.set_tab(t), 17)
+        self.tab_btns = [Button((W - 576 + i * 168, 16, 160, 38), t, lambda t=t: self.set_tab(t), 17)
                          for i, t in enumerate(self.TABS)]
-        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: game.change(TitleScene(game)), 20)] + \
-            self.tab_btns
+        self.buttons = [Button((20, 650, 140, 48), "Back", lambda: self.back(), 20)] + self.tab_btns
+        owner = lambda i: ITEMS[i]["cls"] or ITEMS[i].get("affinity")
         self.items = sorted((i for i, d in ITEMS.items() if not d["enemy"]),
-                            key=lambda i: (list(CHARACTERS).index(ITEMS[i]["cls"]) if ITEMS[i]["cls"] else -1,
+                            key=lambda i: (list(CHARACTERS).index(owner(i)) if owner(i) else -1,
                                            ["common", "rare", "epic", "legendary"].index(ITEMS[i]["rarity"]),
                                            ITEMS[i]["name"]))
         self.enemies = [e for e in ENEMIES]
@@ -3176,7 +3471,7 @@ class CompendiumScene(Scene):
 
     def handle(self, ev):
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.game.change(TitleScene(self.game))
+            self.back()
             return True
         if ev.type == pygame.MOUSEWHEEL:
             self.scroll = max(0, self.scroll - ev.y)
@@ -3197,7 +3492,7 @@ class CompendiumScene(Scene):
 
     def shown_items(self):
         f = self.filter
-        return [i for i in self.items if f is None or (ITEMS[i]["cls"] or "shared") == f]
+        return [i for i in self.items if f is None or (ITEMS[i]["cls"] or ITEMS[i].get("affinity") or "shared") == f]
 
     def draw_items(self, s, mouse):
         cell, cols, top = 56, 20, 130
@@ -3542,7 +3837,8 @@ class UpgradePickScene(Scene):
 # =================================================================== recipe book (in a run)
 class RecipeBookScene(Scene):
     """Every recipe, with a tick on the ingredients you already carry. Put the two next to each other in
-    your kit; they fuse when you leave the bag or shop screen."""
+    your kit; they fuse after your next won battle."""
+    pausable = False
 
     def music(self):
         return run_music(self.game)
@@ -3566,8 +3862,8 @@ class RecipeBookScene(Scene):
         s.fill(ui.BG)
         top_bar(s, self.run, "Recipe book")
         text(s, "Recipe book", (30, 62), 28, ui.GOLD, True)
-        text(s, "Put both ingredients next to each other in your KIT. They fuse into the result when you leave the "
-                "bag or shop screen.", (30, 100), 15, ui.DIM)
+        text(s, "Put both ingredients next to each other in your KIT. They fuse into the result after your next "
+                "won battle.", (30, 100), 15, ui.DIM)
         owned = {i.id for i in self.run.all_items()}
         mouse = pygame.mouse.get_pos()
         tip = None
@@ -3592,7 +3888,7 @@ class RecipeBookScene(Scene):
                     tip = iid
             text(s, "+", (r.x + 123, r.y + 26), 24, ui.GOLD, True, center=True)
             text(s, "=", (r.x + 273, r.y + 26), 24, ui.GOLD, True, center=True)
-            note = "You have both - put them side by side!" if ready else \
+            note = "You have both - put them side by side and win a fight!" if ready else \
                 ("You have one of them" if (a in owned or b in owned) else "")
             text(s, note, (r.x + 400, r.y + 28), 13, ui.GREEN if ready else ui.DIM, True)
         self.draw_buttons(s)

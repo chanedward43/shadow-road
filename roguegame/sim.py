@@ -70,6 +70,16 @@ def pack(run, merge=True):
             pass   # no room anywhere: the item is dropped
 
 
+# ---------------------------------------------------------------- seeds
+def run_seeds(seed0, n):
+    """n random, unrelated run seeds drawn from one base seed. Every run gets its own random map, enemy cast,
+    shops and events (not seed0, seed0+1, seed0+2...), and the same seed0 always gives the same list, so a
+    training / balancing / report run can still be repeated exactly with --seed."""
+    import random as _random
+    rng = _random.Random(f"shadow-road:{seed0}")
+    return [rng.randrange(1 << 30) for _ in range(n)]
+
+
 # ---------------------------------------------------------------- one run
 def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
     """Play a full run. Returns a summary dict. `log` (list) receives (kind, options, choice) tuples.
@@ -111,6 +121,9 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
             return False
         run.battles_won += 1
         run.kills.append(eid)
+        made = run.combine_recipes()             # recipe pairs touching in the kit fuse after a won battle
+        if made:
+            out["recipes"].extend(res for _, _, res in made)
         run.gold_reward(kind)
         rolled = run.roll_drop(eid, b.f[1].carried)
         drop = rolled[0] if rolled else None
@@ -140,6 +153,8 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
             if kind == "boss":
                 if run.stage >= 3:
                     out["win"] = True
+                if run.stage == 3:
+                    run.hp = run.max_hp              # the final villain falls: fully healed
                 if (run.stage >= 3 and not endless) or run.stage >= max_stage:
                     break
                 run.next_stage()
@@ -191,10 +206,6 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                 if auto_infuse(run, run.rng):
                     pay_forge(run, res["forge"])
         pack(run)
-        made = run.combine_recipes()
-        if made:
-            out["recipes"].extend(res for _, _, res in made)
-            pack(run)
     out["stage"] = run.stage
     out["floor"] = (run.pos[0] + 1) if run.pos else 0
     out["death_kind"] = out["fights"][-1]["kind"] if out["fights"] and not out["win"] else None

@@ -1557,3 +1557,266 @@ BUILDS["onmyoji"] = ["Spirit army: Paper & Fox Shikigami, Inugami Talisman, Spir
                      "Curse & hex: Ofuda of Binding, Bell of Ill Omen, Yin-Yang Mirror, Hex of Five Elements"]
 BUILDS["sohei"] = ["Iron faith: Kesa Robe, Iron Kesa, Iron Geta, Fudō Myōō Idol - take hits, gain Ki, strike back",
                    "Ki burst: Vajra Staff, Prayer Drum, Heart Sutra, Thunder Sutra - store Ki then release it"]
+
+
+
+# ================================================================ v1.10 CLASS-FAVOURED ITEMS
+# 15 items per class that deepen its two build paths. Unlike class-exclusive items (cls=...), these are
+# FAVOURED (affinity=...): they show up far more often for that class, but any class can find, buy and use
+# them - a Ninja who finds a Kongo Staff can start a Ki engine (any kit with a Ki item gets a small Ki pool).
+def fitem(iid, name, shape, rarity, tags, affinity, **stats):
+    item(iid, name, shape, rarity, tags, affinity=affinity, **stats)
+
+
+def ftitem(iid, name, shape, rarity, tags, affinity, trigger, n=0, **stats):
+    titem(iid, name, shape, rarity, tags, trigger, n=n, affinity=affinity, **stats)
+
+
+# --- Samurai: Daisho swarm (more blades, each stronger) / Iron fortress (armour that hits back)
+fitem("iron_tsuba", "Iron Tsuba", S1, "common", ["tool"], "samurai", s_block=4, aura=dict(tags=("weapon",), crit=0.05))
+fitem("war_hakama", "War Hakama", H2, "common", ["armor"], "samurai", s_block=6, s_hp=6)
+fitem("war_tessen", "War Tessen", V2, "common", ["weapon", "armor"], "samurai", cd=2.0, dmg=(2, 4), block=3)
+fitem("kogatana", "Kogatana", S1, "common", ["weapon"], "samurai", cd=1.3, dmg=(1, 3), per_tag=("weapon", 1))
+fitem("dojo_nobori", "Dōjō Nobori", V2, "common", ["charm"], "samurai", aura=dict(tags=("weapon",), dmg=1))
+fitem("kote_bracers", "Kote Bracers", H2, "rare", ["armor"], "samurai", cd=3.5, block=5, s_thorns=2)
+fitem("uchigatana", "Uchigatana", V3, "rare", ["weapon"], "samurai", cd=1.7, dmg=(5, 7), crit=0.1, price=7)
+fitem("menpo", "Menpō Face Guard", S1, "rare", ["armor"], "samurai", s_block=8, s_counter=1)
+fitem("iaido_scroll", "Iaidō Scroll", H2, "rare", ["scroll"], "samurai",
+      aura=dict(tags=("weapon",), crit=0.08, speed=0.08), price=7)
+fitem("sode_garami", "Sode-garami", V3, "rare", ["weapon"], "samurai", cd=2.2, dmg=(4, 6), steal_block=4)
+fitem("hatamoto_seal", "Hatamoto Seal", S1, "epic", ["charm"], "samurai", s_hp=10, aura=dict(tags=("armor",), block=2))
+fitem("soryu_blades", "Twin Dragon Blades", H2, "epic", ["weapon"], "samurai", cd=1.4, dmg=(2, 4), hits=2,
+      per_tag=("weapon", 1), price=12)
+ftitem("tetsu_kabuto", "Tetsu Kabuto", SQ, "epic", ["armor"], "samurai", "hits_taken", n=4, dmg=(8, 11), block=8,
+       price=12)
+fitem("jinbaori", "Shōgun's Jinbaori", SQ, "legendary", ["armor"], "samurai", s_block=16, s_thorns=3,
+      aura=dict(tags=("armor",), block=2), price=18)
+fitem("ryumon_katana", "Dragon-Gate Katana", V3, "legendary", ["weapon"], "samurai", cd=1.6, dmg=(8, 11), crit=0.12,
+      per_tag=("weapon", 1), price=19)
+
+# --- Ninja: Throwing swarm (dozens of fast hits) / Fire arts (stacking Burn)
+fitem("bo_shuriken", "Bō-shuriken", S1, "common", ["weapon"], "ninja", cd=0.8, dmg=(1, 3))
+fitem("tetsubishi", "Tetsubishi Pouch", S1, "common", ["tool"], "ninja", s_thorns=2, s_evade=0.03)
+fitem("fire_rat", "Fire-Rat Fuse", S1, "common", ["fire"], "ninja", cd=2.8, burn=2)
+fitem("climbing_rope", "Climbing Rope", H2, "common", ["tool"], "ninja", s_stamina_regen=0.3,
+      aura=dict(tags=("weapon",), stamina_cost=-0.2))
+fitem("ember_kunai", "Ember Kunai", S1, "common", ["weapon", "fire"], "ninja", cd=1.4, dmg=(1, 2), burn=1)
+fitem("chain_of_stars", "Chain of Stars", H3, "rare", ["weapon"], "ninja", cd=1.6, dmg=(1, 2), hits=3, price=7)
+fitem("torinoko", "Torinoko Smoke Egg", S1, "rare", ["tool"], "ninja", cd=5.0, dodge=1, s_evade=0.04)
+fitem("fire_quiver", "Fire-Arrow Quiver", V2, "rare", ["fire", "tool"], "ninja",
+      aura=dict(tags=("fire",), burn=1, speed=0.1), price=7)
+fitem("jika_tabi", "Jika-tabi", H2, "rare", ["armor"], "ninja", s_evade=0.08, s_stamina=1)
+fitem("uzumaki_bomb", "Uzumaki Bomb", SQ, "rare", ["fire", "weapon"], "ninja", cd=3.4, dmg=(3, 5), burn=4, price=7)
+fitem("kage_scroll", "Kage Scroll", H2, "epic", ["scroll"], "ninja", aura=dict(tags=("weapon",), speed=0.15, crit=0.05))
+ftitem("kagero_charm", "Heat-Haze Charm", S1, "epic", ["charm"], "ninja", "adjacent_crit", dodge=1, block=3)
+fitem("katon_brazier", "Katon Brazier", SQ, "epic", ["fire"], "ninja", cd=3.0, burn=4, aura=dict(tags=("fire",), burn=1))
+fitem("thousand_needles", "Thousand Needles", H2, "legendary", ["weapon"], "ninja", cd=1.2, dmg=(2, 3), hits=3,
+      crit=0.1, price=19)
+fitem("phoenix_scroll", "Phoenix Fire Scroll", H2, "legendary", ["fire", "scroll"], "ninja", cd=4.0, burn=7, heal=4,
+      price=18)
+
+# --- Kunoichi: Venom (Poison that never stops) / Crit control (crits that poison and stun)
+fitem("tortoise_comb", "Tortoiseshell Comb", S1, "common", ["charm"], "kunoichi", s_crit=0.05)
+fitem("hemlock_vial", "Hemlock Vial", S1, "common", ["poison"], "kunoichi", cd=3.0, poison=2)
+fitem("silk_tanto", "Silk-Wrapped Tantō", V2, "common", ["weapon"], "kunoichi", cd=1.2, dmg=(2, 4), crit=0.1)
+fitem("parasol", "Geisha Parasol", V3, "common", ["armor"], "kunoichi", cd=4.0, block=4, s_evade=0.03)
+fitem("bitter_tea", "Bitter Root Tea", S1, "common", ["food", "poison"], "kunoichi", cd=4.5, heal=3, poison=1)
+fitem("widow_needle", "Widow's Needle", S1, "rare", ["weapon", "poison"], "kunoichi", cd=1.0, dmg=(1, 2), poison=1,
+      crit=0.1)
+fitem("spider_sash", "Spider-Silk Sash", H2, "rare", ["charm", "poison"], "kunoichi", s_evade=0.05, s_crit_poison=1)
+fitem("sakura_kunai", "Sakura Kunai", S1, "rare", ["weapon"], "kunoichi", cd=1.1, dmg=(2, 3), crit=0.25, crit_stun=0.1)
+fitem("venom_censer", "Venom Censer", V2, "rare", ["poison"], "kunoichi", cd=3.5, poison=3)
+ftitem("moon_mirror", "Moon Mirror", S1, "rare", ["charm", "poison"], "kunoichi", "adjacent_crit", poison=2)
+fitem("kiseru", "Poison Kiseru Pipe", V2, "epic", ["weapon", "poison"], "kunoichi", cd=1.6, dmg=(2, 3), poison=2,
+      aura=dict(tags=("poison",), poison=1), price=12)
+fitem("assassin_obi", "Assassin's Obi", H2, "epic", ["armor"], "kunoichi", s_crit=0.1, s_evade=0.05, s_crit_block=2)
+fitem("black_lotus", "Black Lotus", S1, "epic", ["poison", "curse"], "kunoichi", cd=4.0, poison=4, curse=1)
+fitem("jade_fan", "Jade Death-Fan", H2, "legendary", ["weapon", "poison"], "kunoichi", cd=1.3, dmg=(4, 6), crit=0.25,
+      crit_stun=0.2, s_crit_poison=1, price=19)
+fitem("queen_of_poisons", "Queen of Poisons", SQ, "legendary", ["poison"], "kunoichi", cd=3.0, poison=5,
+      aura=dict(tags=("poison",), poison=2), price=18)
+
+# --- Onmyoji: Spirit army (shikigami) / Curse & hex
+fitem("hitogata", "Hitogata Paper Doll", S1, "common", ["summon", "charm"], "onmyoji", cd=4.0,
+      summon=dict(name="Paper Doll", dmg=(2, 3), cd=1.5))
+fitem("ink_stone", "Ink Stone", S1, "common", ["tool"], "onmyoji", aura=dict(tags=("summon",), summon_dmg=1))
+fitem("curse_nail", "Cursed Nail", S1, "common", ["curse"], "onmyoji", cd=3.0, curse=1, hex=1)
+fitem("divining_sticks", "Divining Sticks", V2, "common", ["charm", "curse"], "onmyoji", s_curse=1, s_hp=5)
+fitem("kami_offering", "Kami Offering", S1, "common", ["food"], "onmyoji", cd=4.5, heal=4, cleanse=1)
+fitem("tengu_shikigami", "Tengu Shikigami", V2, "rare", ["summon", "charm"], "onmyoji", cd=5.0,
+      summon=dict(name="Little Tengu", dmg=(3, 5), cd=1.3), price=7)
+fitem("serpent_shikigami", "Serpent Shikigami", SQ, "rare", ["summon", "curse"], "onmyoji", cd=5.0,
+      summon=dict(name="Paper Serpent", dmg=(2, 3), cd=1.2, curse=1), price=7)
+fitem("star_chart", "Star Chart", H2, "rare", ["scroll"], "onmyoji", aura=dict(tags=("summon",), speed=0.15))
+fitem("ox_hour_nails", "Ox-Hour Nails", V2, "rare", ["curse"], "onmyoji", cd=3.5, hex=2)
+fitem("kekkai_ward", "Kekkai Ward", S1, "rare", ["charm", "armor", "curse"], "onmyoji", cd=4.0, block=5, curse=1)
+fitem("raijin_talisman", "Raijin Talisman", S1, "epic", ["charm", "curse"], "onmyoji", cd=4.0, hex=2, stun=0.3)
+fitem("shikigami_contract", "Shikigami Contract", H2, "epic", ["summon", "scroll"], "onmyoji", cd=6.0,
+      summon=dict(name="Oni Shikigami", dmg=(5, 7), cd=1.7), price=12)
+fitem("five_element_wheel", "Wheel of Five Elements", SQ, "epic", ["curse", "tool"], "onmyoji", s_curse=2,
+      aura=dict(tags=("curse",), speed=0.15))
+fitem("seimei_fan", "Seimei's Folding Fan", H2, "legendary", ["charm"], "onmyoji",
+      aura=dict(tags=("summon",), summon_dmg=2, speed=0.2), price=18)
+fitem("yomi_mirror", "Mirror of Yomi", S1, "legendary", ["curse"], "onmyoji", cd=3.5, curse=2, hex=3, price=18)
+
+# --- Sohei: Iron faith (take hits, strike back) / Ki burst (store Ki, release it)
+fitem("juzu_beads", "Juzu Beads", S1, "common", ["charm", "ki"], "sohei", cd=4.0, ki=1, heal=2)
+fitem("mino_cloak", "Mino Straw Cloak", SQ, "common", ["armor"], "sohei", s_block=8, s_counter=1)
+fitem("temple_bo", "Temple Bō", V3, "common", ["weapon", "ki"], "sohei", cd=2.0, dmg=(3, 5), stun=0.2, ki=1)
+fitem("mokugyo", "Mokugyo Drum", S1, "common", ["charm", "ki"], "sohei", cd=3.5, ki=1, block=2)
+fitem("alms_rice", "Alms Rice", S1, "common", ["food", "ki"], "sohei", cd=5.0, heal=4, ki=1)
+ftitem("stone_lantern", "Stone Lantern", V2, "rare", ["armor", "ki"], "sohei", "hits_taken", n=5, block=10, ki=2)
+fitem("iron_mala", "Iron Mala", S1, "rare", ["charm"], "sohei", s_counter=2, s_thorns=1)
+fitem("kongo_staff", "Kongō Staff", V3, "rare", ["weapon", "ki"], "sohei", cd=2.4, dmg=(5, 8), ki=1, sunder=0.2,
+      price=7)
+ftitem("patience_scroll", "Scroll of Patience", H2, "rare", ["scroll", "ki"], "sohei", "block_count", n=4, ki=2)
+fitem("pilgrim_gourd", "Pilgrim's Gourd", V2, "rare", ["food"], "sohei", cd=5.0, heal=6, stamina_gain=1.5)
+fitem("nio_bracers", "Niō Bracers", H2, "epic", ["armor"], "sohei", s_block=10, s_counter=2,
+      aura=dict(tags=("armor",), block=1))
+fitem("dragon_bell", "Dragon Bell", SQ, "epic", ["charm", "ki"], "sohei", cd=6.0, ki_burst=3, heal=4)
+ftitem("diamond_sutra", "Diamond Body Sutra", H2, "epic", ["scroll", "ki"], "sohei", "hits_taken", n=3, ki=1, block=4)
+fitem("kurikara_sword", "Kurikara Sword", V3, "legendary", ["weapon", "ki", "fire"], "sohei", cd=2.0, dmg=(6, 9),
+      burn=2, ki=1, price=19)
+fitem("hiei_bell", "Bell of Mount Hiei", SQ, "legendary", ["charm", "ki"], "sohei", cd=6.0, ki_burst=5, s_counter=2,
+      price=18)
+
+AFFINITY_ITEMS = {c: [i for i, d in ITEMS.items() if d.get("affinity") == c] for c in CHARACTERS}
+KI_POOL_ANY = 6           # any class with a Ki item in its kit gets a Ki pool this big (Sohei have their own)
+AFFINITY_WEIGHT = (2.0, 0.35)   # shop/reward weight of a favoured item for its own class / for other classes
+
+
+# ================================================================ v1.10 BOSS RELICS
+# Every villain carries one of its relics into each fight (picked at random) on top of its signature item.
+# When it falls it drops ONE of the things it fought with: relics and signature items are the likeliest.
+loot("kurogane_fan", "Kurogane's War Fan", H2, "epic", ["weapon", "armor"], cd=1.8, dmg=(4, 6), block=4, steal_block=2,
+     boss_relic=True)
+loot("bandit_crown", "Bandit King's Crown", S1, "epic", ["charm"], s_crit=0.06, gold_per_win=2, boss_relic=True)
+loot("gama_oil", "Gama's Toad Oil", S1, "epic", ["food", "poison"], cd=4.0, heal=4, poison=2, boss_relic=True)
+loot("gama_pipe", "Gama's Smoke Pipe", V2, "epic", ["tool"], cd=5.0, dodge=2, boss_relic=True)
+loot("dojoji_bell", "Bell of Dōjō-ji", SQ, "legendary", ["fire"], cd=4.0, burn=5, stun=0.4, boss_relic=True)
+loot("serpent_robe", "Serpent-Scale Robe", SQ, "epic", ["armor"], s_block=12, s_evade=0.06, boss_relic=True)
+loot("frost_mirror", "Frost Mirror", S1, "legendary", ["armor"], cd=4.0, block=8, stun=0.3, boss_relic=True)
+loot("yuki_comb", "Snow Woman's Comb", S1, "epic", ["charm"], s_evade=0.1, s_hp=8, boss_relic=True)
+loot("ashura_mask", "Ashura's Three Faces", S1, "legendary", ["charm"],
+     aura=dict(tags=("weapon",), dmg=2, speed=0.15), boss_relic=True)
+loot("ashura_drum", "Asura War Drum", SQ, "legendary", ["charm"], s_hp=20, aura=dict(tags=None, speed=0.12),
+     boss_relic=True)
+loot("orochi_shard", "Shard of Kusanagi", V2, "legendary", ["weapon", "poison"], cd=1.4, dmg=(6, 9), poison=2,
+     lifesteal=0.1, boss_relic=True)
+loot("orochi_sake", "Eight-Fold Sake", V2, "legendary", ["food"], cd=5.0, heal=12, cleanse=3, boss_relic=True)
+loot("oni_king_horn", "Oni King's Horn", S1, "legendary", ["weapon"], cd=1.5, dmg=(8, 11), sunder=0.3, boss_relic=True)
+loot("drunken_kanabo", "Drunken Kanabō", V4, "legendary", ["weapon"], cd=2.6, dmg=(14, 19), stun=0.6, grow=2,
+     boss_relic=True)
+loot("killing_stone", "Sesshō-seki", S1, "legendary", ["poison", "curse"], cd=3.0, poison=4, curse=1,
+     boss_relic=True)
+loot("fox_bride_mirror", "Fox Bride's Mirror", S1, "legendary", ["charm"], s_crit=0.12, s_evade=0.08, boss_relic=True)
+loot("enma_gavel", "Enma's Gavel", V2, "legendary", ["weapon", "curse"], cd=2.0, dmg=(8, 12), hex=2, boss_relic=True)
+loot("judgement_crown", "Crown of Judgement", S1, "legendary", ["charm", "curse"], s_block=15, s_curse=2,
+     boss_relic=True)
+
+BOSS_RELICS = {
+    "kurogane": ["kurogane_fan", "bandit_crown"], "gama": ["gama_oil", "gama_pipe"],
+    "kiyohime": ["dojoji_bell", "serpent_robe"], "yuki_onna": ["frost_mirror", "yuki_comb"],
+    "ashura": ["ashura_mask", "ashura_drum"], "orochi": ["orochi_shard", "orochi_sake"],
+    "shuten_doji": ["oni_king_horn", "drunken_kanabo"], "tamamo": ["killing_stone", "fox_bride_mirror"],
+    "enma": ["enma_gavel", "judgement_crown"],
+}
+for _eid, _rel in BOSS_RELICS.items():
+    ENEMIES[_eid]["relics"] = list(_rel)
+
+# Bosses drop one of the things they fought with; relics / signature items weigh this much more than the rest.
+BOSS_UNIQUE_DROP_WEIGHT = 3
+# Regular mobs sometimes carry one class item too (any class), not only shared gear.
+MOB_CLASS_ITEM_CHANCE = 0.35
+
+
+def enemy_fill(eid, stage, rng):
+    """Random extra gear for one battle: [(item_id, level)]. Deterministic for a given rng.
+    Mobs, elites and bosses all mix shared gear (incl. class-favoured items) with class-exclusive items;
+    bosses also bring one of their relics (see enemy_relic) and so carry one less random item."""
+    tier = enemy_tier(eid)
+    core = {i for i, _ in ENEMIES[eid].get("kit", [])}
+    s = max(1, stage)
+    n = ENEMY_FILL_COUNT[tier][min(s, 4) - 1] + (min(2, s - 4) if s > 4 else 0)
+    if tier == "boss" and ENEMIES[eid].get("relics"):
+        n = max(1, n - 1)
+    rar = {1: ("common", "rare"), 2: ("common", "rare", "epic"), 3: ("rare", "epic")}.get(
+        s, ("rare", "epic", "legendary"))
+    if tier == "boss" and s >= 3:
+        rar = ("rare", "epic", "legendary")
+    shared = [i for i in _pool(lambda c: c is None, rar) if i not in core]
+    classed = _pool(lambda c: c is not None, rar)
+    picks = []
+    n_cls = {"boss": 2, "elite": 1}.get(tier, 1 if rng.random() < MOB_CLASS_ITEM_CHANCE else 0)
+    for c in rng.sample(sorted(CHARACTERS), n_cls):
+        opts = [i for i in classed if ITEMS[i]["cls"] == c and i not in picks]
+        if opts:
+            picks.append(rng.choice(opts))
+    while len(picks) < n and shared:
+        i = rng.choice(shared)
+        if i not in picks or len(shared) <= len(picks):
+            picks.append(i)
+    return [(iid, _fill_level(tier, s, k)) for k, iid in enumerate(picks[:n])]
+
+
+def enemy_relic(eid, rng):
+    """The relic a boss brings to this fight (None for everyone else)."""
+    rel = ENEMIES[eid].get("relics")
+    return rng.choice(rel) if rel else None
+
+
+# ================================================================ v1.10 TAGS
+# Tags are rules, not decoration: auras ("adjacent poison items +1 Poison") and per-tag bonuses read them, so
+# every item that does a thing must carry that thing's tag. _normalize_tags() enforces it for every item.
+TAG_INFO = {
+    "weapon": ("Weapon", "Deals damage and spends Stamina. Boosted by weapon auras (whetstones, banners)."),
+    "armor": ("Armor", "Protects you: Block, Thorns, counter-attacks. Boosted by armor auras."),
+    "food": ("Food", "Heals or restores Stamina. Boosted by food auras (chopsticks)."),
+    "poison": ("Poison", "Applies or powers Poison. Boosted by poison auras."),
+    "fire": ("Fire", "Applies or powers Burn. Boosted by fire auras."),
+    "charm": ("Charm", "Talismans and trinkets: passive bonuses and auras."),
+    "tool": ("Tool", "Gear that supports the rest of your kit, often by boosting neighbours."),
+    "scroll": ("Scroll", "Written techniques: strong auras and effects."),
+    "summon": ("Summon", "Calls shikigami that fight on their own. Boosted by summon auras."),
+    "curse": ("Curse", "Curses or Hexes the enemy. Boosted by curse auras."),
+    "ki": ("Ki", "Builds or spends Ki. Any kit with a Ki item gets a Ki pool."),
+}
+TAG_ORDER = list(TAG_INFO)
+
+
+def _needs_tags(d):
+    aura = d.get("aura") or {}
+    sm = d.get("summon") or {}
+    need = set()
+    if d.get("poison") or d.get("s_crit_poison") or aura.get("poison"):
+        need.add("poison")
+    if d.get("burn") or aura.get("burn") or sm.get("burn"):
+        need.add("fire")
+    if d.get("summon") or aura.get("summon_dmg"):
+        need.add("summon")
+    if d.get("curse") or d.get("hex") or d.get("s_curse") or sm.get("curse"):
+        need.add("curse")
+    if d.get("ki") or d.get("ki_burst") or aura.get("ki"):
+        need.add("ki")
+    return need
+
+
+def _normalize_tags():
+    for d in ITEMS.values():
+        if d["enemy"]:
+            continue
+        missing = [t for t in TAG_ORDER if t in _needs_tags(d) and t not in d["tags"]]
+        if missing:
+            d["tags"] = tuple(d["tags"]) + tuple(missing)
+
+
+_normalize_tags()
+
+
+def class_label(d):
+    """'Samurai only' / 'Samurai' (favoured) / '' for an item's class line."""
+    if d.get("cls"):
+        return CHARACTERS[d["cls"]]["name"] + " only"
+    if d.get("affinity"):
+        return CHARACTERS[d["affinity"]]["name"]
+    return ""

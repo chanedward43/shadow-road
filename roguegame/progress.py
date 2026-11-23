@@ -119,10 +119,15 @@ def on_stage(run):
     return [a for a in new if a]
 
 
-def on_run_end(run, cleared):
-    """cleared = beat the stage-3 villain (a story win, or an endless run that got past stage 3)."""
+def on_run_end(run, cleared, record=True):
+    """cleared = beat the stage-3 villain (a story win, or an endless run that got past stage 3).
+    record=False: the story was just won and the run carries on into Endless - count the win now, once."""
     d = data()
     new = []
+    if cleared and run.flags.get("story_counted"):
+        cleared = False                          # already counted when the run went on into Endless
+    if not record:
+        run.flags["story_counted"] = cleared or run.flags.get("story_counted", False)
     if any(run.flags.get(k + "_done") for k in ("tanuki", "ronin")):
         new.append(unlock("omens"))
     if sum(1 for i in run.all_items() if i.level >= 3) >= 3:
@@ -205,5 +210,5 @@ def seen_enemy(eid):
 
 
 def endless_unlocked():
-    """Endless opens once you've beaten the story (all 3 stages) with any class."""
-    return bool(data()["story_wins"]) or bool(data()["asc"])
+    """Kept for old saves / tools: Endless is now offered to every run that beats the stage-3 villain."""
+    return True

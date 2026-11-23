@@ -31,7 +31,7 @@ sys.path.insert(0, ROOT)
 
 from roguegame import data  # noqa: E402
 from roguegame.ai import LearningAgent, describe_policy  # noqa: E402
-from roguegame.sim import play  # noqa: E402
+from roguegame.sim import play, run_seeds  # noqa: E402
 
 CLASSES = list(data.CHARACTERS)
 ASSETS = os.path.join(ROOT, "assets")
@@ -64,7 +64,8 @@ def _evaluate(args):
     _set_balance(bal)
     agent = LearningAgent(cls).load(os.path.join(ASSETS, "ai", f"{cls}.npz"))
     agent.greedy = True
-    return cls, [play(cls, seed0 + i, agent) for i in range(n)], describe_policy(agent)
+    seeds = run_seeds(seed0 + CLASSES.index(cls) * 7_919, n)        # random maps (the same ones every tuning round)
+    return cls, [play(cls, s, agent) for s in seeds], describe_policy(agent)
 
 
 EVAL_SEED0 = None          # set once per balance run (random), so every tuning round is measured on the same maps

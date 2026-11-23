@@ -1,5 +1,5 @@
-"""Run Report: hundreds of AI runs per class -> one Excel workbook per patch, plus a picture of every
-winning board. Made for balancing by CONTENT (which items, enemies, events are too strong or weak),
+"""Run Report: hundreds of AI runs per class -> one Excel workbook per patch, with a picture of every
+winning board embedded in it. Made for balancing by CONTENT (which items, enemies, events are too strong or weak),
 not just class HP.
 
     python tools/run_report.py                 # 200 runs per class with the trained agents
@@ -7,7 +7,7 @@ not just class HP.
 
 Writes reports/v<VERSION>/:
     run_report_v<VERSION>.xlsx   Summary, Runs, Items, Enemies, Events, Techniques, Winning boards
-    wins/<class>_<seed>.png      the final kit of every winning run
+(the winning boards are drawn in memory and embedded in the workbook - no separate image files)
 
 Needs: pip install numpy openpyxl pillow pygame-ce
 How to read it is explained on the workbook's "Read me" sheet.
@@ -27,6 +27,9 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from roguegame.data import ITEMS, ENEMIES, CHARACTERS, TECHNIQUES, enemy_tier, STAGES  # noqa: E402
 from roguegame.version import VERSION  # noqa: E402
+from roguegame.sim import run_seeds  # noqa: E402
+
+CLASS_OFFSET = {c: i * 7_919 for i, c in enumerate(CHARACTERS)}
 
 SEED0 = None              # random per report (set in main); --seed N repeats a report exactly
 
@@ -38,7 +41,8 @@ def _play(args):
     from roguegame.sim import play
     agent = LearningAgent(cls).load(os.path.join(ROOT, "assets", "ai", f"{cls}.npz"))
     agent.greedy = True
-    return [play(cls, seed0 + i, agent) for i in range(start, start + n)]
+    seeds = run_seeds(seed0 + CLASS_OFFSET[cls], start + n)[start:]     # every run: its own random map
+    return [play(cls, s, agent) for s in seeds]
 
 
 def collect(runs_per_class, workers=5):
@@ -53,7 +57,9 @@ def collect(runs_per_class, workers=5):
 
 
 # ---------------------------------------------------------------- winning board pictures
-def render_board(run, path):
+def render_board(run):
+    """The final kit of a winning run as PNG bytes (embedded straight into the workbook)."""
+    import io
     import pygame
     from roguegame import ui
     from roguegame.inventory import Grid, ItemInst
@@ -95,7 +101,10 @@ def render_board(run, path):
     for iid, d in sorted(run["item_dmg"].items(), key=lambda kv: -kv[1])[:5]:
         ui.text(s, f"{ITEMS[iid]['name'][:20]}  {d}", (tx, y), 13, ui.TEXT)
         y += 19
-    pygame.image.save(s, path)
+    buf = io.BytesIO()
+    pygame.image.save(s, buf, "board.png")
+    buf.seek(0)
+    return buf
 
 
 # ---------------------------------------------------------------- analysis helpers
@@ -134,7 +143,7 @@ def enemy_stage(eid):
 
 
 # ---------------------------------------------------------------- the workbook
-def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
+def build_workbook(runs, out_xlsx, boards=None):
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.formatting.rule import ColorScaleRule
@@ -177,7 +186,7 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
     lines = [
         f"Shadow Road run report - v{VERSION}",
         f"Made {datetime.datetime.now():%Y-%m-%d %H:%M}  -  {len(runs)} runs by the trained AI ({len(by_cls)} classes, "
-        f"greedy play, seeds from {SEED0}). Overall success {pct(total_wins, len(runs))}%.",
+        f"greedy play, every run on its own random map, report seed {SEED0}). Overall success {pct(total_wins, len(runs))}%.",
         "",
         "Success = the stage-3 villain was defeated.",
         "Summary: win rate, how deep runs get and what ends them, per class.",
@@ -192,7 +201,7 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
         "The first battles should be (near) 0% and each stage should climb smoothly to its boss.",
         "Events: how often each option is picked and how runs that picked it ended.",
         "Techniques: how often each is learned and the win rate of runs that learned it.",
-        "Winning boards: the final kit of every winning run (also saved as PNGs in the wins folder).",
+        "Winning boards: a picture of the final kit of every winning run.",
         "",
         "Caveats: the AI is a decent but not perfect player. Treat small samples (n < 25) with care.",
         "Correlation is not causation: strong players buy strong items, so compare items within a class.",
@@ -382,12 +391,12 @@ def build_workbook(runs, out_xlsx, board_dir, embed_boards=True):
     for r in runs:
         if not r["win"]:
             continue
-        png = os.path.join(board_dir, f"{r['char']}_{r['seed']}.png")
+        png = (boards or {}).get((r["char"], r["seed"]))
         ws.cell(row=row, column=1, value=CHARACTERS[r["char"]]["name"])
         ws.cell(row=row, column=2, value=r["seed"])
         ws.cell(row=row, column=3, value=r["battles"])
         ws.cell(row=row, column=4, value=r["max_hp"])
-        if embed_boards and os.path.exists(png):
+        if png is not None:
             img = XLImage(png)
             img.width, img.height = img.width * 0.6, img.height * 0.6
             ws.add_image(img, f"E{row}")
@@ -406,17 +415,18 @@ def main():
     SEED0 = a.seed if a.seed is not None else int.from_bytes(os.urandom(4), "little") % 1_000_000_000
     print(f"Seed {SEED0} (repeat with --seed {SEED0})", flush=True)
     out_dir = os.path.join(ROOT, "reports", f"v{VERSION}")
-    board_dir = os.path.join(out_dir, "wins")
-    os.makedirs(board_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
+    old_pngs = os.path.join(out_dir, "wins")            # older reports wrote loose PNGs here
+    if os.path.isdir(old_pngs):
+        import shutil
+        shutil.rmtree(old_pngs, ignore_errors=True)
     print(f"Playing {a.runs} runs per class with the trained agents...", flush=True)
     runs = collect(a.runs)
     wins = [r for r in runs if r["win"]]
     print(f"{len(runs)} runs, {len(wins)} wins. Drawing winning boards...", flush=True)
-    if not a.no_images:
-        for r in wins:
-            render_board(r, os.path.join(board_dir, f"{r['char']}_{r['seed']}.png"))
+    boards = {} if a.no_images else {(r["char"], r["seed"]): render_board(r) for r in wins}
     out = os.path.join(out_dir, f"run_report_v{VERSION}.xlsx")
-    build_workbook(runs, out, board_dir, embed_boards=not a.no_images)
+    build_workbook(runs, out, boards)
     print(f"Wrote {out}")
     prune_old_reports(os.path.basename(out_dir))
 

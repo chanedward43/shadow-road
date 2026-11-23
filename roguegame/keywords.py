@@ -16,7 +16,8 @@ KEYWORDS = {
     "lifesteal": ("Lifesteal", (220, 90, 150), "Heals you for part of the damage dealt."),
     "curse": ("Curse", (175, 125, 225), "The cursed fighter deals 5% less damage per stack (max 50%)."),
     "hex": ("Hex", (195, 140, 235), "Deals damage for every Curse stack on the enemy. Ignores Block."),
-    "ki": ("Ki", (255, 200, 120), "Sōhei: builds when hit. Powers counter-attacks and Ki Bursts."),
+    "ki": ("Ki", (255, 200, 120), "Stored by Ki items (and by the Sōhei when hit). Ki Bursts spend it all at "
+                                    "once. Any class with a Ki item can hold up to 6."),
     "shikigami": ("Shikigami", (120, 210, 230), "An ally spirit that attacks on its own for the whole battle (max 5)."),
     "counter": ("Counter-attack", (255, 170, 90), "Strikes back whenever an enemy attack lands on you."),
     "grow": ("Grow", (255, 120, 90), "This weapon gains damage every time it hits, for the rest of the battle."),

@@ -52,8 +52,10 @@ def publish_music(out):
 
 def build(serve=False):
     stage()
+    # our own page template: a Shadow Road loading screen with a progress bar, and no "click to start" wait
     cmd = [sys.executable, "-m", "pygbag", "--title", "Shadow Road", "--icon", "favicon.png",
-           "--app_name", "shadowroad"]
+           "--app_name", "shadowroad", "--ume_block", "0",
+           "--template", os.path.join(ROOT, "tools", "web_template.tmpl")]
     if not serve:
         cmd.append("--build")
     cmd.append(STAGE)

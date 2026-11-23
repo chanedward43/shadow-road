@@ -21,6 +21,16 @@ python main.py
   Every tooltip shows what an item sells for (half its price, times its level).
 - **Map (M)** button on every screen (shop, rewards, events, battles): check the road ahead, then
   press M, Esc or Back to return where you were.
+- **Pause menu**: **Esc** or the menu button (top right, next to the speaker) pauses any in-run screen
+  (battles stop, the run clock stops) with Settings, Compendium, Recipe book and Main menu (your run stays
+  saved at its last map - *Continue* picks it up).
+- **Pin a tooltip**: hover anything with a tooltip (items, techniques, passives) and **Alt + right-click** to
+  pin it in place. Then hover a keyword inside it (Poison, Block, Stun...) to read what it means. Only one
+  tooltip is pinned at a time; Alt + right-click again releases it.
+- **Item tooltips** show the class name (*Samurai only* for class items, *Samurai* for items favoured by a
+  class that anyone can use), coloured **tags** (Weapon, Armor, Food, Poison, Fire, Charm, Tool, Scroll,
+  Summon, Curse, Ki - the same colours everywhere) and every **recipe** the item is part of: in the shop, in
+  rewards and drops, and in your kit.
 - In battle: 1x / 2x / 4x speed, or Skip. Both kits are shown as real grids: shaded items are still
   charging, flashes are activations, and xN counts uses. Hover an item for what it has done this battle,
   or a status (Block, Poison...) for what it means. The battle log lists every activation.
@@ -60,7 +70,7 @@ python main.py
   Mind (sell a technique), High-Stakes Dice and the Veiled Merchant.
 - While holding an item, a **Rotate** button appears bottom-right (handy on touch screens). On a touch screen, a quick tap picks an item up; press and hold to read its tooltip.
 - **Weapons merge up to level 5** (other items to 3). Levels 4 and 5 add a little less each.
-- **Recipes**: put two ingredients next to each other in your kit; when you leave the bag/shop screen they fuse
+- **Recipes**: put two ingredients next to each other in your kit; **after your next won battle** they fuse
   into a unique item (never sold in shops). Hover an ingredient to see its recipe; matching neighbours glow gold.
   Katana + Whetstone, Dō Armor + Kasa Hat, Shuriken + Kunai, Fire Bomb + Oil Flask, Iron Fan + Smoke Bomb,
   Poisoned Tea + Fukiya, Ofuda + Paper Shikigami, Temple Naginata + Kesa Robe, Onigiri + Sake Gourd,
@@ -79,9 +89,24 @@ python main.py
 - **End screen**: MVP item, damage by item, the final kit, techniques and the run's numbers.
 - **Hotkeys**: Space = skip / continue, 1 / 2 / 4 = battle speed.
 - **Mute**: the speaker button in the top-right corner of every screen. **Settings** also has *Larger text*.
-- **Endless** unlocks after you beat the story once. **Arena runs** are saved: refresh and pick *Resume run*
+- **Endless** is offered when you beat the stage-3 villain: you're healed to full and choose to end the
+  journey (a story victory) or keep going. **Arena runs** are saved: refresh and pick *Resume run*
   (leaving during a ghost duel counts as a loss). On the website, music streams in when first played, so the
   game itself loads faster.
+
+## Items: classes, tags, villains' relics
+- **Class items** (*Samurai only*): only that class finds them.
+- **Favoured items** (*Samurai*, 15 per class): built for that class's two build paths and offered to it far
+  more often, but any class can find and use them. Any kit with a Ki item can store a little Ki.
+- **Tags are rules**: auras and per-tag bonuses read them, so every item that Poisons is tagged Poison, every
+  Ki item Ki, and so on (a test checks it).
+- **Villains' relics**: every boss brings one of its two relics to each fight and, when it falls, drops ONE of
+  everything it fought with (relics and its signature item are the likeliest). Mobs, elites and bosses all
+  carry a mix of their own items, shared gear and class items.
+- **Sprites**: every item has its own. Japanese gear is pixel art drawn for this game
+  (`tools/sprite_templates.py` + `tools/make_sprites.py`; `--sheet` makes a contact sheet); katanas, daggers,
+  polearms and clubs come from the CC0 *16x16 Weapon RPG Icons* sheets. `python tools/import_sprites.py --check`
+  lists items with no sprite or sharing an identical one.
 
 ## Development
 | Task | Command |
@@ -94,8 +119,8 @@ python main.py
 Game design, research notes and balance details are in [DESIGN.md](DESIGN.md).
 
 ## Endless mode
-Pick **Endless** (bottom-right of the class select). It plays like Story until Lord Ashura or Orochi falls,
-then the road goes on: **stage 4 Yomi Pass**, **stage 5 Blood Moon over Kyō** (a big difficulty jump, and
+Beat the stage-3 villain (you're healed to full) and choose **Keep going into Endless**. The story win
+still counts (ascension, achievements). Then the road goes on: **stage 4 Yomi Pass**, **stage 5 Blood Moon over Kyō** (a big difficulty jump, and
 every enemy is enraged: +10% crit, items 10% faster), then **The Endless Night** - harder every stage.
 New yokai join the pools (Gaki, Nurikabe, Kasha, Onryō, Yamauba, Ittan-momen), plus the elites Ushi-oni
 and Raijū and three new villains: **Shuten-dōji**, **Tamamo-no-Mae** and **Enma, King of Yomi**.
@@ -183,8 +208,8 @@ effect the AI can't see, so you'll know when something needs a feature.
 `run_report_v<version>.xlsx` with sheets for the summary per class, every run (where it ended - stage and
 floor - what killed it, the final board, MVP item, techniques, events, recipes, spirits), every item (pick
 rate and win-rate change when a run ends holding it), every enemy (how often it kills the player and how
-much HP it costs), events and techniques - plus `wins/<class>_<seed>.png`, a picture of every winning
-board (also embedded in the workbook). Only the newest patch's report is kept: writing a new one deletes the
+much HP it costs), events and techniques - plus a picture of every winning board, embedded in the
+workbook (no separate image files). Only the newest patch's report is kept: writing a new one deletes the
 older `reports/v*` folders (they stay in git history). Use it to tune items, enemies and events, not just class HP.
 
 **3. Read the results:** the terminal prints each round's win rate per class. Afterwards look at

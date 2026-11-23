@@ -14,7 +14,7 @@ import numpy as np
 
 from .data import ITEMS, RARITIES, CHARACTERS, TECHNIQUES, weapon_stamina_cost
 from .events import EVENT_BY_ID, option_fx
-from .sim import STOP, play
+from .sim import STOP, play, run_seeds
 
 # Every feature list below is FIXED-SIZE and describes options by what they do, never by their name or
 # position in a content list. New items, events (tag their options in events.FX) and techniques (made of
@@ -36,7 +36,7 @@ KNOWN_ITEM_KEYS = {
     "lifesteal", "summon", "curse", "hex", "ki", "ki_burst", "s_counter", "s_curse", "per_tag", "s_crit_block",
     "s_crit_poison", "grow", "steal_block", "cleanse", "stamina_cost", "stamina_gain", "s_stamina",
     "s_stamina_regen", "gold_per_win", "interest", "gold_per_boss", "discount", "trigger", "n", "alone_dmg",
-    "aura", "regen", "s_regen", "s_thorns", "speed", "level", "adj", "sunder", "crit_stun"}
+    "aura", "regen", "s_regen", "s_thorns", "speed", "level", "adj", "sunder", "crit_stun", "affinity", "boss_relic"}
 
 
 def _state(run):
@@ -55,7 +55,8 @@ def item_features(iid, run):
     per = lambda k: d.get(k, 0) / d["cd"] if d.get("cd") else 0.0
     f = [0.0, *_state(run), 1.0]
     f += [1.0 if d["rarity"] == r else 0.0 for r in RARITIES]
-    f += [1.0 if d["cls"] else 0.0, float(same), 1.0 if d.get("loot") else 0.0,
+    mine = 1.0 if d["cls"] else (0.5 if d.get("affinity") == run.char_id else 0.0)   # class / favoured item
+    f += [mine, float(same), 1.0 if d.get("loot") else 0.0,
           len(d["shape"]) / 6.0, d["price"] / 20.0]
     f += [1.0 if t in d["tags"] else 0.0 for t in TAGS]
     f += [1.0 if d.get("aura") else 0.0, dmg / 5.0, per("block") / 3.0, per("heal") / 2.0,
@@ -207,8 +208,9 @@ class LearningAgent:
         return r
 
     def train(self, episodes, seed0=0, progress=None):
-        for ep in range(episodes):
-            res = play(self.char_id, seed0 + ep, self)
+        """Learn from `episodes` runs, each on its own random map (seeds drawn from seed0, see run_seeds)."""
+        for ep, seed in enumerate(run_seeds(seed0, episodes)):
+            res = play(self.char_id, seed, self)
             self.learn(res)
             if progress and (ep + 1) % progress[0] == 0:
                 progress[1](ep + 1, self.baseline)

@@ -231,6 +231,9 @@ def player_fighter(run):
         f.counter += 2 + int(mods.get("counter", 0))
         f.ki = 3 + int(mods.get("ki_start", 0))
         f.ki_burst_bonus = int(mods.get("ki_burst_bonus", 0))
+    if not f.ki_max and any(ci.st.get("ki") or ci.st.get("ki_burst") for ci in f.items):
+        from .data import KI_POOL_ANY             # any class carrying a Ki item can store a little Ki
+        f.ki_max = KI_POOL_ANY
     f.block += mods.get("s_block", 0)
     f.resolve_max += mods.get("resolve_max", 0)
     f.first_strike = mods.get("first_strike", 1.0)
@@ -278,6 +281,11 @@ def enemy_fighter(enemy_id, scale=1.0, stage=1, rng=None):
     for iid in e["items"]:                     # unique enemy-only moves
         f.add_stats(_scale_stats(ITEMS[iid], scale))
     gear = list(e.get("kit", [])) + (enemy_fill(enemy_id, stage, rng) if rng is not None else [])
+    if rng is not None:
+        from .data import enemy_relic
+        relic = enemy_relic(enemy_id, rng)    # villains bring one of their relics to every fight
+        if relic:
+            gear.append((relic, 1))
     for iid, lvl in gear:                      # real items the player can also own
         f.add_stats(_scale_stats(level_stats(ITEMS[iid], lvl), scale))
     f.carried = gear                           # what it can drop when beaten

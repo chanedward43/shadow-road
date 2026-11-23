@@ -8,7 +8,7 @@ While BETA is True the game shows "Beta" in front of the version. When the game 
 BETA = False - the version number keeps counting from wherever it is.
 """
 BETA = True
-VERSION = "1.00"
+VERSION = "1.10"
 
 
 def label():

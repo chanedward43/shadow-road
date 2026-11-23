@@ -18,7 +18,7 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["APPDATA"] = tempfile.mkdtemp()      # tests never touch your real save
 
 from roguegame import data, save  # noqa: E402
-from roguegame.combat import make_battle, effective_stats  # noqa: E402
+from roguegame.combat import make_battle, effective_stats, enemy_fighter  # noqa: E402
 from roguegame.events import EVENTS, options_for, resolve  # noqa: E402
 from roguegame.inventory import ItemInst  # noqa: E402
 from roguegame.run import RunState  # noqa: E402
@@ -49,8 +49,32 @@ class TestContent(unittest.TestCase):
                         self.assertLessEqual(st["dmg"][0], st["dmg"][1])
 
     def test_player_items_have_art(self):
-        missing = [i for i, d in data.ITEMS.items() if not d["enemy"] and not has_art(i)]
+        # items waiting for a downloaded sprite are listed in assets/sprite_requests.json (they draw a tag glyph)
+        import json, os
+        pending = set(json.load(open(os.path.join(os.path.dirname(__file__), "..", "assets", "sprite_requests.json"))))
+        missing = [i for i, d in data.ITEMS.items() if not d["enemy"] and not has_art(i) and i not in pending]
         self.assertEqual(missing, [])
+
+    def test_tags_follow_effects(self):
+        for iid, d in data.ITEMS.items():
+            if not d["enemy"]:
+                self.assertFalse(data._needs_tags(d) - set(d["tags"]), f"{iid} is missing a tag for what it does")
+                for t in d["tags"]:
+                    self.assertIn(t, data.TAG_INFO, f"{iid}: unknown tag {t}")
+
+    def test_favoured_items_and_boss_relics(self):
+        from roguegame.run import RunState
+        for c in data.CHARACTERS:
+            self.assertEqual(len(data.AFFINITY_ITEMS[c]), 15)
+        r = RunState("ninja", 3)
+        self.assertGreater(r.offer_weight(data.ITEMS["bo_shuriken"]), r.offer_weight(data.ITEMS["kongo_staff"]))
+        self.assertTrue(any(i["id"] == "kongo_staff" for i in r.item_pool("rare")), "other classes can find it")
+        import random as _r
+        for eid, rel in data.BOSS_RELICS.items():
+            f = enemy_fighter(eid, 1.0, stage=3, rng=_r.Random(eid))
+            self.assertTrue(any(i in rel for i, _ in f.carried), f"{eid} brings a relic")
+            drops = {r.roll_drop(eid, f.carried, _r.Random(k))[0] for k in range(60)}
+            self.assertTrue(drops <= {i for i, _ in f.carried} | {data.ENEMY_LOOT.get(eid)})
 
     def test_enemies_have_moves_art_and_loot(self):
         for eid, e in data.ENEMIES.items():
@@ -84,7 +108,8 @@ class TestContent(unittest.TestCase):
         for seed in range(15):
             mob = data.enemy_fill("kappa", 2, _r.Random(seed))
             self.assertEqual(len(mob), 2)
-            self.assertTrue(all(data.ITEMS[i]["cls"] is None for i, _ in mob), "mobs: shared items only")
+            self.assertLessEqual(sum(1 for i, _ in mob if data.ITEMS[i]["cls"]), 1,
+                                 "mobs: shared gear, at most one class item")
             elite = data.enemy_fill("nue", 3, _r.Random(seed))
             self.assertIsNotNone(data.ITEMS[elite[0][0]]["cls"], "elites carry a class item")
             self.assertEqual(elite[0][1], data._fill_level("elite", 3, 0), "elite gear level follows the stage")
@@ -812,17 +837,18 @@ class TestV9(unittest.TestCase):
             self.assertTrue(has_art(res), res)
         self.assertFalse(any(i["id"] == "honed_katana" for i in r.item_pool("epic")), "never sold")
 
-    def test_discovery_and_endless_lock(self):
+    def test_discovery_and_story_win_counted_once(self):
         from roguegame import progress, storage
         storage.delete(progress.KEY)
         progress.reset_cache()
-        self.assertFalse(progress.endless_unlocked())
         progress.discover_item("katana", "katana", "kunai")
         progress.discover_enemy("kappa")
         self.assertTrue(progress.seen_item("kunai") and progress.seen_enemy("kappa"))
         self.assertEqual(progress.data()["seen_items"].count("katana"), 1)
-        progress.on_run_end(RunState("ninja", 1), cleared=True)
-        self.assertTrue(progress.endless_unlocked())
+        run = RunState("ninja", 1)
+        progress.on_run_end(run, cleared=True, record=False)      # won the story, carried on into Endless
+        progress.on_run_end(run, cleared=True)                    # ...and later the endless run ends
+        self.assertEqual(progress.data()["story_wins"]["ninja"], 1, "a story win is counted once")
         storage.delete(progress.KEY)
         progress.reset_cache()
 

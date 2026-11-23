@@ -5,7 +5,7 @@ import os
 
 import pygame
 
-from .data import ITEMS, describe_stats, sell_value
+from .data import ITEMS, CHARACTERS, describe_stats, sell_value, class_label, TAG_INFO, recipes_for, recipe_of
 
 W, H = 1280, 720
 
@@ -43,14 +43,20 @@ RARITY_COL = {"common": (160, 160, 165), "rare": (80, 145, 235),
               "epic": (180, 95, 230), "legendary": (245, 165, 40)}
 TAG_COL = {"weapon": (58, 44, 52), "armor": (34, 50, 80), "food": (92, 64, 38),
            "poison": (40, 72, 38), "fire": (110, 44, 22), "charm": (90, 34, 44),
-           "tool": (52, 52, 60), "scroll": (96, 80, 46), "enemy": (90, 36, 40)}
+           "tool": (52, 52, 60), "scroll": (96, 80, 46), "enemy": (90, 36, 40),
+           "summon": (30, 70, 80), "curse": (64, 40, 84), "ki": (100, 72, 30)}
+# bright chip colour for each tag (tooltips, compendium filters): the same colour everywhere a tag is shown
+TAG_CHIP = {"weapon": (225, 225, 235), "armor": (120, 175, 250), "food": (240, 205, 150), "poison": (140, 215, 90),
+            "fire": (250, 150, 70), "charm": (245, 140, 160), "tool": (180, 190, 205), "scroll": (230, 200, 130),
+            "summon": (120, 210, 230), "curse": (185, 140, 235), "ki": (255, 200, 120), "enemy": (240, 120, 120)}
 # bright line colour used for the item icon on top of the dark fill
 LINE_COL = {"weapon": (215, 215, 230), "armor": (120, 180, 255), "food": (245, 235, 210),
             "poison": (150, 230, 100), "fire": (255, 160, 60), "charm": (255, 120, 120),
             "tool": (190, 200, 210), "scroll": (240, 210, 140), "enemy": (240, 120, 120)}
 # glyph shape used per tag (see _glyph)
 GLYPH = {"weapon": "weapon", "armor": "shield", "food": "food", "poison": "poison", "fire": "fire",
-         "charm": "charm", "tool": "tool", "scroll": "scroll"}
+         "charm": "charm", "tool": "tool", "scroll": "scroll", "summon": "charm", "curse": "poison", "ki": "charm"}
+LINE_COL.update(summon=(140, 230, 245), curse=(200, 150, 245), ki=(255, 210, 130))
 
 _fonts = {}
 TEXT_SCALE = 1.0          # "Larger text" setting
@@ -72,7 +78,7 @@ def art(key, size, long_side=None):
     a size x size box (or long_side along its long axis), or None if there is no art."""
     if key not in _art_src:
         p = os.path.join(ART_DIR, f"{key}.png")
-        _art_src[key] = pygame.image.load(p).convert_alpha() if os.path.exists(p) else None
+        _art_src[key] = pygame.image.load(p).convert_alpha() if os.path.exists(p) else _placeholder(key)
     src = _art_src[key]
     if src is None or size <= 0:
         return None
@@ -86,12 +92,33 @@ def art(key, size, long_side=None):
             else:
                 box_w = long_side
         k = min(box_w / w, box_h / h)
-        if k >= 1:
-            k = max(1, int(k))          # whole-number scaling keeps pixel art crisp
+        if k >= 4:
+            k = int(k)                  # big sizes: whole-number scaling keeps pixel art crisp
+        # small sizes keep the in-between scale (nearest-neighbour): rounding down to 1x / 2x left sprites,
+        # especially diagonal ones in long items (staves, katanas), small inside their tiles
         _art_cache[ck] = pygame.transform.scale(src, (max(1, int(w * k)), max(1, int(h * k))))
     return _art_cache[ck]
 
 
+def _placeholder(key):
+    """Stand-in icon for an item whose sprite hasn't been made yet (see assets/sprite_requests.md): its main
+    tag's symbol on a tag-coloured tile, with the item's initials, so different items still look different."""
+    d = ITEMS.get(key)
+    if d is None or d["enemy"]:
+        return None
+    tag = d["tags"][0]
+    img = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.draw.rect(img, TAG_COL.get(tag, (60, 60, 60)), (1, 1, 30, 30), border_radius=6)
+    pygame.draw.rect(img, TAG_CHIP.get(tag, TEXT), (1, 1, 30, 30), 1, border_radius=6)
+    _glyph(img, GLYPH.get(tag, tag), (16, 13), 16, LINE_COL.get(tag, TEXT_CHIP_FALLBACK))
+    initials = "".join(w[0] for w in d["name"].replace("-", " ").split()[:2]).upper()
+    f = pygame.font.Font(None, 14)
+    t = f.render(initials, True, (250, 245, 235))
+    img.blit(t, t.get_rect(center=(16, 26)))
+    return img
+
+
+TEXT_CHIP_FALLBACK = (230, 230, 230)
 WEB = sys.platform == "emscripten"
 
 
@@ -110,8 +137,9 @@ def font(size, bold=False, italic=False):
     return _fonts[key]
 
 
-def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=4):
-    """Like text_block, but effect keywords (Poison, Burn, Block...) are drawn in their own colour, in italics."""
+def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=4, hits=None):
+    """Like text_block, but effect keywords (Poison, Burn, Block...) are drawn in their own colour, in italics.
+    hits: optional list that receives (rect, keyword) for every keyword drawn."""
     from .keywords import KEYWORDS, keyword_of
     x0, y = pos
     x = x0
@@ -127,6 +155,8 @@ def rich_text_block(surf, s, pos, width, size=16, col=TEXT, spacing=4):
         if x > x0 and x + w > x0 + width:
             x, y = x0, y + lh
         surf.blit(f.render(word, True, KEYWORDS[k][1] if k else col), (x, y))
+        if k and hits is not None:
+            hits.append((pygame.Rect(x, y, w, lh - spacing), k))
         x += w + space
     return y + lh
 
@@ -354,37 +384,143 @@ def tooltip_lines(iid, eff=None):
     return describe_stats(st)
 
 
+# ---------------------------------------------------------------- tooltips that can be pinned
+# Every tooltip registers itself as "the tooltip on screen this frame". Alt + right-click pins it (main.py):
+# it stays put while you move the mouse, and hovering a keyword in it (Poison, Block...) explains that keyword.
+TIP = {"frame": None, "pinned": None, "drawing": False, "kw": [], "rect": None}
+
+
+def _offer(fn, *a, **k):
+    if not TIP["drawing"]:
+        TIP["frame"] = (fn, a, k)
+
+
+def draw_pinned(surf):
+    p = TIP["pinned"]
+    if not p:
+        return
+    fn, a, k = p
+    TIP["drawing"], TIP["kw"], TIP["rect"] = True, [], None
+    try:
+        fn(surf, *a, **k)
+    finally:
+        TIP["drawing"] = False
+    r = TIP["rect"]
+    if r is None:
+        return
+    badge = pygame.Rect(r.right - 92, r.y - 12, 84, 20)       # "pinned" badge on the frame
+    pygame.draw.rect(surf, GOLD, badge, border_radius=6)
+    text(surf, "PINNED", badge.center, 12, (30, 22, 10), True, center=True)
+    hint = "Alt + right-click to release"
+    text(surf, hint, (r.centerx, r.bottom + 10), 12, DIM, True, center=True)
+    mouse = pygame.mouse.get_pos()
+    for rr, key in TIP["kw"]:
+        if rr.collidepoint(mouse):
+            pygame.draw.rect(surf, GOLD, rr.inflate(4, 2), 1, border_radius=3)
+            draw_keyword_popup(surf, key, mouse)
+            break
+
+
+def draw_keyword_popup(surf, key, mouse):
+    """A small box explaining one keyword (Poison, Block, Stun...)."""
+    from .keywords import KEYWORDS
+    name, col, desc = KEYWORDS[key]
+    lines = wrap(desc, 14, 276)
+    h = 42 + (font(14).get_height() + 3) * len(lines)
+    r = pygame.Rect(min(mouse[0] + 16, W - 312), min(mouse[1] + 16, H - h - 4), 300, h)
+    panel(surf, r, PANEL, col)
+    surf.blit(font(17, True, True).render(name, True, col), (r.x + 12, r.y + 8))
+    text_block(surf, desc, (r.x + 12, r.y + 34), 276, 14, TEXT, spacing=3)
+
+
+def tag_chips(surf, tags, pos, size=12, max_w=None):
+    """Coloured tag chips (Weapon, Poison, Ki...). Returns the y below them."""
+    x0, y = pos
+    x = x0
+    h = font(size, True).get_height() + 4
+    for t in tags:
+        label = TAG_INFO.get(t, (t.title(),))[0]
+        w = font(size, True).size(label)[0] + 12
+        if max_w and x > x0 and x + w > x0 + max_w:
+            x, y = x0, y + h + 4
+        col = TAG_CHIP.get(t, TEXT)
+        r = pygame.Rect(x, y, w, h)
+        pygame.draw.rect(surf, tuple(c // 5 for c in col), r, border_radius=5)
+        pygame.draw.rect(surf, col, r, 1, border_radius=5)
+        text(surf, label, (r.x + 6, r.y + 2), size, col, True)
+        x = r.right + 5
+    return y + h
+
+
+def recipe_lines(iid):
+    """What this item fuses into (and with what), or what it is made from."""
+    out = []
+    for partner, res in recipes_for(iid):
+        out.append(f"+ {ITEMS[partner]['name']}  ->  {ITEMS[res]['name']}")
+    src = recipe_of(iid)
+    if src:
+        out.append("Made from " + " + ".join(ITEMS[i]["name"] for i in src))
+    return out
+
+
 def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=None, fit=False):
     """Item tooltip. Effect keywords are coloured + italic and explained at the bottom.
     fight_stats: optional list of lines ("this battle" numbers). fit=True grows/moves the box to fit."""
     from .keywords import keywords_in
+    _offer(draw_tooltip, iid, rect, eff=eff, price=price, extra=extra, fight_stats=fight_stats, fit=fit)
     d = ITEMS[iid]
     rect = pygame.Rect(rect)
-    layer = pygame.Surface((rect.width, 900), pygame.SRCALPHA)
+    layer = pygame.Surface((rect.width, 1000), pygame.SRCALPHA)
+    hits = []
     x, y, wdt = 18, 14, rect.width - 36
     name = eff.get("name", d["name"]) if eff else d["name"]
     lvl = eff.get("level", 1) if eff else 1
-    text(layer, name if lvl <= 1 else f"{d['name']}  (level {lvl})", (x, y), 22, RARITY_COL[d["rarity"]], True)
-    y += 30
-    if d.get("loot"):
-        text(layer, "Enemy drop - never sold in shops", (x, y), 13, GOLD)
-        y += 18
-    tag = d["rarity"].title() + "  -  " + ", ".join(t for t in d["tags"])
-    if d["cls"]:
-        tag += "  (class item)"
-    text(layer, tag, (x, y), 14, DIM)
-    y += 24
+    title = name if lvl <= 1 else f"{d['name']}  (level {lvl})"
+    y = text_block(layer, title, (x, y), wdt, 21, RARITY_COL[d["rarity"]], spacing=2, bold=True) + 2
+    # rarity + class line: "Rare  -  Samurai only" (exclusive) or "Rare  -  Samurai" (favoured, anyone can use it)
+    r1 = text(layer, d["rarity"].title(), (x, y), 14, RARITY_COL[d["rarity"]], True)
+    who = class_label(d)
+    if who:
+        cid = d.get("cls") or d.get("affinity")
+        text(layer, "-", (r1.right + 8, y), 14, DIM)
+        text(layer, who, (r1.right + 20, y), 14, CHARACTERS[cid]["color"], True)
+    y += 22
+    if d.get("affinity") and not d.get("cls"):
+        y = text_block(layer, f"Favoured by the {CHARACTERS[d['affinity']]['name']}: offered to them more often. "
+                              f"Any class can use it.", (x, y), wdt, 12, DIM, spacing=2) + 2
+    if d.get("boss_relic"):
+        y = text_block(layer, "Villain's relic - dropped only by the boss who carries it", (x, y), wdt, 13, GOLD,
+                       spacing=2) + 2
+    elif d.get("loot"):
+        y = text_block(layer, "Enemy drop - never sold in shops", (x, y), wdt, 13, GOLD, spacing=2) + 2
+    elif d.get("recipe"):
+        y = text_block(layer, "Recipe item - made by fusing two items", (x, y), wdt, 13, (190, 150, 255),
+                       spacing=2) + 2
+    if not d["enemy"]:
+        y = tag_chips(layer, d["tags"], (x, y + 2), 12, wdt) + 8
+    else:
+        y += 4
     lines = tooltip_lines(iid, eff)
     for ln in lines:
-        y = rich_text_block(layer, ln, (x, y), wdt, 16, spacing=5)
+        y = rich_text_block(layer, ln, (x, y), wdt, 16, spacing=5, hits=hits)
     if eff is not None and eff.get("speed", 1.0) != 1.0:
         y = text_block(layer, f"(speed boosted x{eff['speed']:.2f} by neighbours)", (x, y), wdt, 14, GREEN)
+    recipes = [] if d["enemy"] else recipe_lines(iid)
+    if recipes:
+        y += 6
+        text(layer, "Recipe", (x, y), 15, (190, 150, 255), True)
+        y += 21
+        for ln in recipes:
+            y = text_block(layer, ln, (x + 8, y), wdt - 8, 14, (215, 195, 255), spacing=2)
+        if recipes_for(iid):
+            y = text_block(layer, "Place the two side by side in your kit: they fuse after your next battle.",
+                           (x + 8, y + 2), wdt - 8, 12, DIM, spacing=2)
     if fight_stats:
         y += 6
         text(layer, "This battle:", (x, y), 15, GOLD, True)
         y += 20
         for ln in fight_stats:
-            y = rich_text_block(layer, ln, (x + 8, y), wdt - 8, 15)
+            y = rich_text_block(layer, ln, (x + 8, y), wdt - 8, 15, hits=hits)
     if price is not None:
         y += 6
         text(layer, f"Price: {price} ryō", (x, y), 16, GOLD, True)
@@ -396,13 +532,13 @@ def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=
         y += 20
     if extra:
         y += 4
-        y = text_block(layer, extra, (x, y), wdt, 14, DIM)
+        y = rich_text_block(layer, extra, (x, y), wdt, 14, DIM, spacing=3, hits=hits)
     keys = keywords_in(" ".join(lines + (fight_stats or [])))
     if keys:
         y += 6
         pygame.draw.line(layer, LINE, (x, y), (rect.width - 14, y), 1)
         y = keyword_glossary(layer, keys, (x, y + 6), wdt)
-    h = y + 10
+    h = y + 12
     if fit:
         rect.height = h
         rect.y = max(4, min(rect.y, H - h - 4))
@@ -411,7 +547,30 @@ def draw_tooltip(surf, iid, rect, eff=None, price=None, extra=None, fight_stats=
         rect.height = h
     panel(surf, rect, PANEL, RARITY_COL[d["rarity"]])
     surf.blit(layer, rect.topleft, (0, 0, rect.width, h))
+    if TIP["drawing"]:
+        TIP["rect"] = rect
+        TIP["kw"] = [(r.move(rect.topleft), k) for r, k in hits if r.bottom <= h]
     return rect.y + h
+
+
+def draw_info_tip(surf, title, body, col, mouse, sub=None, width=330):
+    """A generic hover box (techniques, passives, villains...). Pinnable like item tooltips."""
+    _offer(draw_info_tip, title, body, col, mouse, sub=sub, width=width)
+    hits = []
+    inner = width - 28
+    layer = pygame.Surface((width, 700), pygame.SRCALPHA)
+    y = text_block(layer, title, (14, 10), inner, 18, col, spacing=2, bold=True) + 2
+    if sub:
+        y = text_block(layer, sub, (14, y), inner, 12, DIM, spacing=2) + 4
+    y = rich_text_block(layer, body, (14, y + 2), inner, 15, TEXT, spacing=4, hits=hits) + 10
+    r = pygame.Rect(min(mouse[0] + 16, W - width - 8), 0, width, y)
+    r.y = max(4, min(mouse[1] + 16, H - y - 4))
+    panel(surf, r, PANEL, col)
+    surf.blit(layer, r.topleft, (0, 0, width, y))
+    if TIP["drawing"]:
+        TIP["rect"] = r
+        TIP["kw"] = [(rr.move(r.topleft), k) for rr, k in hits]
+    return r
 
 
 def bar(surf, rect, frac, col, back=(50, 40, 50)):

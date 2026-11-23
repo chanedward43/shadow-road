@@ -466,3 +466,23 @@ def portrait(surf, center, radius, col, glyph, style="enemy", key=None):
         pygame.draw.circle(surf, (255, 220, 80), (x - r * .13, y - r * .03), max(2, r * .06))
         pygame.draw.circle(surf, (255, 220, 80), (x + r * .13, y - r * .03), max(2, r * .06))
         pygame.draw.line(surf, (40, 10, 10), (x - r * .15, y + r * .17), (x + r * .15, y + r * .17), 3)
+
+
+def draw_spirit(surf, inst, ox, oy, cell):
+    """Soul-bound items get a purple gem; awakened tsukumogami get a slowly pulsing spirit outline."""
+    if inst is None or not (getattr(inst, "infusion", None) or getattr(inst, "awakened", None)):
+        return
+    cells = set(inst.shape)
+    if inst.awakened:
+        import time
+        a = int(150 + 90 * math.sin(time.time() * 3))
+        glow = pygame.Surface((cell * 4, cell * 4), pygame.SRCALPHA)
+        for cx, cy in cells:
+            pygame.draw.rect(glow, (190, 150, 255, a), (cx * cell + 1, cy * cell + 1, cell - 2, cell - 2), 3,
+                             border_radius=10)
+        surf.blit(glow, (ox, oy))
+    if inst.infusion:
+        cx, cy = max(cells, key=lambda c: (c[0], -c[1]))          # top-right cell of the item
+        gx, gy = ox + (cx + 1) * cell - 9, oy + cy * cell + 9
+        pygame.draw.polygon(surf, (40, 20, 60), [(gx, gy - 7), (gx + 7, gy), (gx, gy + 7), (gx - 7, gy)])
+        pygame.draw.polygon(surf, (190, 150, 255), [(gx, gy - 5), (gx + 5, gy), (gx, gy + 5), (gx - 5, gy)])

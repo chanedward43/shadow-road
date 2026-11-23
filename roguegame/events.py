@@ -443,3 +443,64 @@ def omen_event(run, key):
     run.flags[key + "_done"] = True
     return dict(id=f"omen_{key}", title=out["title"], art=om["art"], text=out["text"], new=True,
                 options=[dict(label=out["label"], do=out["do"])])
+
+
+# ================================================================ v10: THE KAMI FORGE (Soul Forge)
+FORGE_GOLD = 12
+FORGE_HP = 0.12
+
+
+def _two_items(run):
+    return len(run.all_items()) >= 2
+
+
+def forge_gold(run, rng):
+    return dict(text="The kami of the forge awakens. Choose an item to give up, then the item to receive its spirit.",
+                forge=("gold", FORGE_GOLD))
+
+
+def forge_blood(run, rng):
+    return dict(text="You cut your palm over the anvil. The kami accepts blood. Choose the items.",
+                forge=("hp", FORGE_HP))
+
+
+KAMI_FORGE = dict(id="soul_forge", title="The Kami Forge", art="nodachi", new=True,
+                  text="A smithy older than the road itself. Its kami can pour one item's spirit into another: "
+                       "the first item is lost, the second gains its signature effect at half strength.",
+                  options=[dict(label=f"Offer {FORGE_GOLD} ryō: bind a spirit",
+                                cond=lambda r: r.gold >= FORGE_GOLD and _two_items(r), do=forge_gold),
+                           dict(label=f"Offer blood (-{int(FORGE_HP * 100)}% Max HP): bind a spirit",
+                                cond=_two_items, do=forge_blood),
+                           dict(label="Leave", do=leave)])
+EVENTS.append(KAMI_FORGE)
+EVENT_BY_ID["soul_forge"] = KAMI_FORGE
+
+
+def pay_forge(run, cost):
+    """Charge the forge's price. cost = ("gold", n) | ("hp", fraction) | None (free)."""
+    if not cost:
+        return
+    kind, v = cost
+    if kind == "gold":
+        run.gold -= v
+    else:
+        loss = max(1, int(run.max_hp * v))
+        run.max_hp = max(10, run.max_hp - loss)
+        run.hp = min(run.hp, run.max_hp)
+
+
+def auto_infuse(run, rng):
+    """For bots / simulations: sacrifice the least valuable spare item into the best weapon."""
+    from .spirit import can_infuse, infuse, signature
+    items = run.all_items()
+    value = lambda i: (["common", "rare", "epic", "legendary"].index(i.data["rarity"]), i.level)
+    targets = sorted([i for i in run.bag.items if i.data.get("dmg") and not i.infusion], key=value, reverse=True)
+    sources = sorted([i for i in items if signature(i.data)], key=value)
+    for dst in targets[:1]:
+        for src in sources:
+            if can_infuse(src, dst)[0]:
+                infuse(src, dst)
+                for g in (run.bag, run.stash):
+                    g.remove(src)
+                return src, dst
+    return None

@@ -21,7 +21,7 @@ def _grid_to(g):
 def _grid_from(d):
     g = Grid(d["w"], d["h"])
     for it in d["items"]:
-        inst = ItemInst(it["id"], rot=it["rot"], level=it.get("level", 1))
+        inst = ItemInst.from_dict(it)
         g.place(inst, it["x"], it["y"])
     return g
 

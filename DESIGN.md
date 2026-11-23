@@ -397,3 +397,21 @@ the opponent's name and class, whether it was a player or an AI ghost, and their
   floor bonuses each round.
 - **AI**: item features now include economy value, trigger power and the alone bonus. All events, including
   the new ones, have features, so the agents were retrained.
+
+## v0.95: Item spirits (Soul Forge + Tsukumogami)
+All the rules are in `roguegame/spirit.py`. Items gain four fields: `infusion`, `battles`, `usage` and `awakened`.
+They are saved with the run, sent with Arena ghosts, and kept in match history.
+- **Soul Forge**: an item's *signature* is its most defining effect.
+  - Active effects are checked first, in this order: Poison > Burn > Curse > Hex > Stun > Heal > Regen > Block > ... > damage.
+  - Passive starting stats count only if the item has no active effect.
+  - The signature passes on at half strength (minimum 1).
+  - An active signature needs a recipient that acts on a timer.
+  - Each item can hold one spirit. Merging keeps the spirit of either copy.
+  - Price: 12 ryō or 12% Max HP at the *Kami Forge* event. It is free at Arena floor nodes.
+- **Tsukumogami**: `RunState.record_battle` counts a battle for every item in the kit and adds up what each
+  one did. After 8 battles an item awakens. `awaken_type` picks the type in this order:
+  - many crits (at least 25% of uses) -> Lightning;
+  - otherwise the biggest of damage (Hundred Cuts), Block (Unbreakable), healing x1.5 (Merciful) and
+    Poison/Burn/Curse x3 (Vengeful);
+  - passive gear -> Guardian Spirit.
+  - Simulations record battles too, so the AI balance includes awakened items.

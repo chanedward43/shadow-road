@@ -294,12 +294,13 @@ NODE_STYLE = {
     "boss": ((230, 50, 50), "BOSS"),
     "omen": ((240, 200, 80), "Omen"),
     "forge": ((210, 120, 60), "Forge"), "bounty": ((200, 160, 60), "Bounty"), "dojo": ((90, 170, 110), "Dojo"),
+    "soul": ((170, 120, 240), "Kami Forge"),
 }
 
 
 NODE_ART = {"fight": "map_fight", "elite": "map_elite", "boss": "map_boss", "event": "map_event",
             "shop": "map_shop", "rest": "map_rest", "treasure": "map_shrine", "forge": "nodachi",
-            "bounty": "coin_purse", "dojo": "map_rest"}
+            "bounty": "coin_purse", "dojo": "map_rest", "soul": "nodachi"}
 
 
 class MapScene(Scene):
@@ -401,6 +402,8 @@ class MapScene(Scene):
                                     title="Shrine", message="The kami grant one item."))
         elif kind == "event":
             g.change(EventScene(g, arena.pick_floor_event(run), after=back))
+        elif kind == "soul":
+            g.change(SoulForgeScene(g, None, back))
         else:                                        # forge / bounty / dojo
             g.toast(arena.resolve_floor(run, kind), ui.GOLD, 4)
             audio.play("event")
@@ -470,7 +473,7 @@ class MapScene(Scene):
         tips = {"fight": "Enemy", "elite": "Tough foe + technique", "shop": "Buy & sell",
                 "rest": "Heal or train", "treasure": "Free item", "event": "Mystery event",
                 "boss": "Stage villain", "omen": "Your past returns", "forge": "Level up an item",
-                "bounty": "Free ryō", "dojo": "+4 max HP"}
+                "bounty": "Free ryō", "dojo": "+4 max HP", "soul": "Bind a spirit (free)"}
         if self.arena:
             tips.update(fight="Practice fight", elite="Hard practice", boss="Ghost duel (counts!)")
         present = {n["kind"] for row in run.map for n in row}
@@ -722,6 +725,8 @@ class InventoryScene(Scene):
         other = hit[0].item_at(hit[2], hit[3]) if hit else None
         if other and self.run.can_merge(other, inst):
             other.level += 1
+            from .spirit import merge_into
+            merge_into(other, inst)
             self.held = None
             audio.play("merge")
             self.say(f"Merged! {ITEMS[other.id]['name']} is now level {other.level}.")
@@ -866,6 +871,7 @@ class InventoryScene(Scene):
         for inst in grid.items:
             ui.draw_item(s, inst.id, inst.shape, o[0] + inst.x * CELL, o[1] + inst.y * CELL, CELL,
                          highlight=self.highlight.get(inst.uid), level=inst.level, rot=inst.rot)
+            ui.draw_spirit(s, inst, o[0] + inst.x * CELL, o[1] + inst.y * CELL, CELL)
 
     def draw(self, s):
         s.fill(ui.BG)
@@ -881,8 +887,9 @@ class InventoryScene(Scene):
             inst = hit[0].item_at(hit[2], hit[3])
             if inst:
                 in_bag = hit[0] is run.bag
+                from .spirit import describe
                 hover_tip = (inst.id, eff.get(inst.uid) if in_bag else inst.data, None,
-                             None if in_bag else "In travel chest: NOT used in battle.")
+                             describe(inst) if in_bag else "In travel chest: NOT used in battle. " + describe(inst))
                 from .data import max_level
                 if inst.level < max_level(inst.data):
                     hover_tip = hover_tip[:3] + ((hover_tip[3] + " " if hover_tip[3] else "")
@@ -1018,6 +1025,7 @@ class InventoryScene(Scene):
                         s.blit(g, r)
             tl = self.held_topleft(mouse)
             ui.draw_item(s, inst.id, inst.shape, tl[0], tl[1], CELL, alpha=200, level=inst.level, rot=inst.rot)
+            ui.draw_spirit(s, inst, tl[0], tl[1], CELL)
 
         if self.flash_t > 0:
             text(s, self.flash_msg, (W // 2, H - 40), 20, ui.GOLD, True, center=True)
@@ -1276,7 +1284,11 @@ class BattleScene(Scene):
         if self.on_result is not None:
             self.on_result(self.battle.winner == 0)
             return
-        run.record_battle(self.pf.items)
+        for inst in run.record_battle(self.pf.items):
+            from .spirit import AWAKENINGS
+            g.toast(f"Tsukumogami! {ITEMS[inst.id]['name']} awakens: {inst.data['name']}", (190, 150, 255), 6)
+            audio.play("achievement")
+            announce(g, [a for a in [progress.unlock("tsukumogami")] if a])
         if getattr(run, "arena", None):              # arena floor fight: practice, full heal after
             run.hp = run.max_hp
             run.after_battle(self.battle.winner == 0, self.kind)
@@ -1575,6 +1587,7 @@ class BattleScene(Scene):
             px, py = ox + inst.x * KCELL, oy + inst.y * KCELL
             bounce = int(7 * math.sin(math.pi * min(1.0, ci.flash / 0.25))) if ci is not None and ci.flash > 0 else 0
             ui.draw_item(s, inst.id, inst.shape, px, py - bounce, KCELL, level=inst.level, rot=inst.rot)
+            ui.draw_spirit(s, inst, px, py - bounce, KCELL)
             xs = [c[0] for c in inst.shape]
             ys = [c[1] for c in inst.shape]
             box = pygame.Rect(px + min(xs) * KCELL + 3, py + min(ys) * KCELL + 3,
@@ -1968,6 +1981,7 @@ class EndScene(Scene):
         for inst in g.items:
             px, py = ox + inst.x * cell, oy + inst.y * cell
             ui.draw_item(s, inst.id, inst.shape, px, py, cell, level=inst.level, rot=inst.rot)
+            ui.draw_spirit(s, inst, px, py, cell)
             for cx, cy in inst.shape:
                 if pygame.Rect(px + cx * cell, py + cy * cell, cell, cell).collidepoint(mouse):
                     tip = inst
@@ -2083,6 +2097,9 @@ class EventScene(Scene):
                                                   on_done=after, title=self.ev["title"],
                                                   message="Pick one."))
             label = "Choose your reward"
+        elif res.get("forge"):
+            nxt = lambda: g.change(SoulForgeScene(g, res["forge"], after))
+            label = "Enter the forge"
         else:
             nxt = lambda: g.change(after())
             label = "Continue"
@@ -2368,6 +2385,7 @@ class MatchHistoryScene(Scene):
         for inst in g.items:
             px, py2 = x0 + inst.x * cell, ky + 22 + inst.y * cell
             ui.draw_item(s, inst.id, inst.shape, px, py2, cell, level=inst.level, rot=inst.rot)
+            ui.draw_spirit(s, inst, px, py2, cell)
             for cx, cy in inst.shape:
                 if pygame.Rect(px + cx * cell, py2 + cy * cell, cell, cell).collidepoint(mouse):
                     tip = inst
@@ -2855,17 +2873,17 @@ class AchievementsScene(Scene):
         n = sum(1 for a in progress.ACHIEVEMENTS if progress.unlocked(a[0]))
         text(s, "Achievements", (24, 16), 34, ui.GOLD, True)
         text(s, f"{n} / {len(progress.ACHIEVEMENTS)} unlocked", (290, 28), 18, ui.DIM, True)
-        cw, chh = 380, 64
+        cw, chh = 380, 56
         for i, (aid, name, desc) in enumerate(progress.ACHIEVEMENTS):
             col, row = i % 2, i // 2
-            r = pygame.Rect(24 + col * (cw + 12), 74 + row * (chh + 8), cw, chh)
+            r = pygame.Rect(24 + col * (cw + 12), 74 + row * (chh + 6), cw, chh)
             got = progress.unlocked(aid)
             panel(s, r, (52, 44, 28) if got else ui.PANEL, ui.GOLD if got else ui.LINE, radius=8)
             pygame.draw.circle(s, ui.GOLD if got else (60, 56, 70), (r.x + 30, r.centery), 18)
             text(s, "✓" if got and not ui.WEB else ("!" if got else "?"), (r.x + 30, r.centery), 18,
                  (30, 24, 20) if got else ui.DIM, True, center=True)
-            text(s, name, (r.x + 60, r.y + 9), 17, ui.TEXT if got else ui.DIM, True)
-            text_block(s, desc, (r.x + 60, r.y + 33), cw - 70, 13, ui.DIM)
+            text(s, name, (r.x + 60, r.y + 6), 17, ui.TEXT if got else ui.DIM, True)
+            text_block(s, desc, (r.x + 60, r.y + 30), cw - 70, 13, ui.DIM)
         # lifetime stats
         st = self.stats
         sp = pygame.Rect(820, 74, W - 844, 568)
@@ -3091,3 +3109,134 @@ class CompendiumScene(Scene):
             count = self.draw_recipes(s, mouse)
         text(s, count, (280, 26), 18, ui.DIM, True)
         self.draw_buttons(s)
+
+
+# =================================================================== the Kami Forge (Soul Forge)
+class SoulForgeScene(Scene):
+    """Step 1: choose the item to sacrifice. Step 2: choose the item that receives its spirit. Confirm."""
+    CARD = 104
+
+    def music(self):
+        return run_music(self.game)
+
+    def __init__(self, game, cost, after):
+        super().__init__(game)
+        self.run = game.run
+        self.cost = cost                  # ("gold", n) | ("hp", fraction) | None
+        self.after = after
+        self.src = None
+        self.dst = None
+        self.items = self.run.bag.items + self.run.stash.items
+        self.rects = []
+        cols = 10
+        for k, inst in enumerate(self.items[:40]):
+            self.rects.append(pygame.Rect(40 + (k % cols) * (self.CARD + 16), 150 + (k // cols) * (self.CARD + 26),
+                                          self.CARD, self.CARD))
+        self.confirm_btn = Button((W - 330, 640, 310, 56), "Bind the spirit", self.confirm, 22, enabled=False)
+        self.buttons = [Button((20, 650, 160, 48), "Leave", self.leave, 20),
+                        Button((200, 650, 170, 48), "Start over", self.reset, 20), self.confirm_btn]
+
+    def reset(self):
+        self.src = self.dst = None
+
+    def leave(self):
+        self.game.change(self.after())
+
+    def confirm(self):
+        from .spirit import infuse
+        from .events import pay_forge
+        if self.src is None or self.dst is None:
+            return
+        pay_forge(self.run, self.cost)
+        infuse(self.src, self.dst)
+        for g in (self.run.bag, self.run.stash):
+            g.remove(self.src)
+        audio.play("levelup")
+        self.game.shake(6, 0.3)
+        self.game.toast(f"The spirit of {ITEMS[self.src.id]['name']} now lives in {ITEMS[self.dst.id]['name']}.",
+                        (190, 150, 255), 5)
+        announce(self.game, [a for a in [progress.unlock("soul_forge")] if a])
+        self.game.change(self.after())
+
+    def handle(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            from .spirit import can_infuse, signature
+            for inst, r in zip(self.items, self.rects):
+                if r.collidepoint(ev.pos):
+                    if self.src is None or inst is self.src:
+                        if signature(inst.data):
+                            self.src = None if inst is self.src else inst
+                            self.dst = None
+                            audio.play("click", 0.6)
+                        else:
+                            self.game.toast("That item has no spirit to give.", (230, 130, 130), 2)
+                    else:
+                        ok, why = can_infuse(self.src, inst)
+                        if ok:
+                            self.dst = inst
+                            audio.play("click", 0.6)
+                        else:
+                            self.game.toast(why, (230, 130, 130), 2.5)
+                    return True
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.leave()
+            return True
+        return super().handle(ev)
+
+    def draw(self, s):
+        from .spirit import signature, can_infuse, fmt, describe
+        s.fill(ui.BG)
+        top_bar(s, self.run, "The Kami Forge")
+        step = "1. Choose the item to SACRIFICE" if self.src is None else "2. Choose the item to RECEIVE its spirit"
+        text(s, step, (40, 66), 26, ui.GOLD, True)
+        price = {"gold": lambda v: f"{v} {CUR}", "hp": lambda v: f"{int(v * 100)}% Max HP"}
+        cost = price[self.cost[0]](self.cost[1]) if self.cost else "free"
+        text(s, f"Price: {cost}.  One spirit per item.  The sacrificed item is gone for good.", (40, 104), 15,
+             ui.DIM)
+        mouse = pygame.mouse.get_pos()
+        hov = None
+        for inst, r in zip(self.items, self.rects):
+            sig = signature(inst.data)
+            if self.src is None:
+                usable = bool(sig)
+            else:
+                usable = inst is self.src or can_infuse(self.src, inst)[0]
+            border = (190, 150, 255) if inst is self.src else (ui.GOLD if inst is self.dst else
+                                                                (ui.RARITY_COL[inst.data["rarity"]] if usable else ui.LINE))
+            panel(s, r, ui.PANEL2 if r.collidepoint(mouse) and usable else (ui.PANEL if usable else (22, 20, 28)),
+                  border, width=3 if inst in (self.src, self.dst) else 2)
+            pic = ui.art(inst.id, 60)
+            if pic:
+                if not usable:
+                    pic = pic.copy()
+                    pic.set_alpha(70)
+                s.blit(pic, pic.get_rect(center=(r.centerx, r.centery - 8)))
+            ui.draw_level(s, inst.level, r.x, r.y, self.CARD)
+            if inst.infusion:
+                pygame.draw.circle(s, (190, 150, 255), (r.right - 10, r.y + 10), 6)
+            name = ITEMS[inst.id]["name"]
+            text(s, name if len(name) <= 15 else name[:14] + ".", (r.centerx, r.bottom + 4), 12,
+                 ui.TEXT if usable else ui.DIM, True, center=True)
+            if sig and usable:
+                text(s, fmt(sig), (r.centerx, r.bottom - 18), 11, (190, 150, 255), center=True)
+            if r.collidepoint(mouse):
+                hov = inst
+        # preview
+        pv = pygame.Rect(40, 560, W - 400, 70)
+        panel(s, pv, (30, 24, 40), (190, 150, 255))
+        if self.src is not None:
+            sig = fmt(signature(self.src.data))
+            if self.dst is not None:
+                msg = f"{ITEMS[self.src.id]['name']} is sacrificed.  {ITEMS[self.dst.id]['name']} gains {sig}."
+            else:
+                msg = f"Sacrificing {ITEMS[self.src.id]['name']} will give: {sig}.  Now choose who receives it."
+            text_block(s, msg, (pv.x + 16, pv.y + 14), pv.width - 32, 17, ui.TEXT)
+        else:
+            text_block(s, "Each item's spirit is its signature effect (shown in purple) at half strength: "
+                          "a Fire Bomb gives Burn, a Kunai gives damage, a Kasa Hat gives starting Block.",
+                       (pv.x + 16, pv.y + 12), pv.width - 32, 15, ui.DIM)
+        self.confirm_btn.enabled = self.src is not None and self.dst is not None
+        self.draw_buttons(s)
+        if hov is not None:
+            rr = pygame.Rect(min(mouse[0] + 16, W - 350), min(mouse[1] + 16, H - 220), 330, 100)
+            ui.draw_tooltip(s, hov.id, rr, eff=hov.data, extra=describe(hov), fit=True)

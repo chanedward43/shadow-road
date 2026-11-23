@@ -98,6 +98,7 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
         b.run_to_end()
         run.hp = max(0, min(run.max_hp, b.f[0].hp))
         run.after_battle(b.winner == 0, kind)
+        run.record_battle(b.f[0].items)          # tsukumogami awaken in simulations too
         out["encounters"].append((eid, kind, b.winner == 0))
         if b.winner != 0:
             out["died_to"] = eid
@@ -169,6 +170,10 @@ def play(char_id, seed, policy, log=None, endless=False, max_stage=30):
                     break
             elif res.get("choose"):
                 pick_item(res["choose"], "reward")
+            elif res.get("forge"):
+                from .events import auto_infuse, pay_forge
+                if auto_infuse(run, run.rng):
+                    pay_forge(run, res["forge"])
         pack(run)
         if run.combine_recipes():
             pack(run)

@@ -421,6 +421,11 @@ class Battle:
                 self._credit("poison", me.poison_on_crit + me.crit_poison)
             if me.crit_block:
                 me.block += me.crit_block
+            if st.get("crit_stun") and foe.stun_t <= 0 and foe.stun_immune <= 0:   # Lightning tsukumogami
+                foe.stun_t = st["crit_stun"]
+                foe.stun_immune = st["crit_stun"] + STUN_IMMUNITY
+                self._credit("stun", st["crit_stun"])
+                self._emit("stun", 1 - side, text=f"STUNNED {st['crit_stun']:.1f}s")
         if me.ambush:
             me.ambush = False
             dmg *= 2

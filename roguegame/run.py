@@ -291,6 +291,8 @@ class RunState:
         for g in (self.bag, self.stash):
             g.remove(consume)
         keep.level += 1
+        from .spirit import merge_into
+        merge_into(keep, consume)               # infusions / awakenings carry over
         return True
 
     def auto_merge(self):
@@ -405,7 +407,12 @@ class RunState:
         return made
 
     def record_battle(self, items):
-        """Add one battle's per-item stats (CItem.stats) to the run totals."""
+        """Add one battle's per-item stats (CItem.stats) to the run totals, and count the battle for every
+        item in the kit (tsukumogami). Returns the items that just awakened."""
+        from .spirit import record
+        by_uid = {ci.uid: ci for ci in items if ci.uid is not None}
+        awoke = [inst for inst in self.bag.items
+                 if record(inst, by_uid[inst.uid].stats if inst.uid in by_uid else None)]
         self.stats["battles"] += 1
         for ci in items:
             d = ci.stats.get("dmg", 0)
@@ -413,6 +420,7 @@ class RunState:
                 self.stats["dmg"] += d
                 iid = ci.st["id"]
                 self.stats["items"][iid] = self.stats["items"].get(iid, 0) + d
+        return awoke
 
     def best_item(self):
         items = self.stats.get("items") or {}

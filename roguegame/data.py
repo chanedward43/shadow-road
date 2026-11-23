@@ -369,6 +369,8 @@ def describe_stats(st):
             out.append(f"  Lifesteal {int(st['lifesteal'] * 100)}%")
         if st.get("crit"):
             out.append(f"  +{int(round(st['crit'] * 100))}% crit chance")
+        if st.get("crit_stun"):
+            out.append(f"  Crits Stun for {st['crit_stun']:.1f}s")
     starts = []
     if st.get("s_block"):
         starts.append(f"+{st['s_block']} Block")

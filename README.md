@@ -65,6 +65,14 @@ python main.py
   Katana + Whetstone, Dō Armor + Kasa Hat, Shuriken + Kunai, Fire Bomb + Oil Flask, Iron Fan + Smoke Bomb,
   Poisoned Tea + Fukiya, Ofuda + Paper Shikigami, Temple Naginata + Kesa Robe, Onigiri + Sake Gourd,
   Bō Staff + Ofuda, Maneki-neko + Coin Purse.
+- **Soul Forge** (the *Kami Forge* `?` event, for ryō or blood; a rare free node on Arena floors): sacrifice one
+  item and pour its signature effect, at half strength, into another - a katana that Burns, armour that
+  heals. One spirit per item (a purple gem); it survives merging and levelling.
+- **Tsukumogami**: in folklore, a tool used long enough gains a soul. Every item that fights in 8 battles in
+  your kit **awakens** (glowing outline, new name), shaped by how you used it: mostly damage -> *of the
+  Hundred Cuts* (Grow +1, +5% crit); lots of crits -> *Lightning* (crits stun); lots of Block -> *Unbreakable*;
+  lots of healing -> *Merciful*; Poison/Burn/Curse -> *Vengeful*; passive gear -> *Guardian Spirit*.
+  Hover an item to see how many battles it still needs.
 - **Compendium** (title screen): every item, enemy and recipe; undiscovered ones are dark silhouettes.
 - **Battles** animate: items bounce when they fire, the attacker lunges, the target shakes, and coloured
   particles show hits, poison, burn, block and heals. Events are painted scenes with a typewriter reveal.

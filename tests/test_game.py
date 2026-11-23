@@ -844,6 +844,90 @@ class TestV9(unittest.TestCase):
         self.assertEqual(dmg, max(r.stats["items"].values()))
 
 
+class TestSpirits(unittest.TestCase):
+    def test_signature_is_the_defining_effect_at_half(self):
+        from roguegame.spirit import signature
+        self.assertEqual(signature(ItemInst("fire_bomb").data), {"burn": max(1, round(data.ITEMS["fire_bomb"]["burn"] / 2))})
+        k = signature(ItemInst("kunai").data)
+        self.assertEqual(list(k), ["dmg"])
+        self.assertEqual(list(signature(ItemInst("kasa_hat").data)), ["s_block"])
+
+    def test_soul_forge_rules_and_save(self):
+        from roguegame.spirit import can_infuse, infuse
+        r = RunState("ninja", 6)
+        r.bag.items, r.stash.items = [], []
+        katana, bomb, hat, kunai = (ItemInst(i) for i in ("katana", "fire_bomb", "kasa_hat", "kunai"))
+        for i, it in enumerate((katana, bomb, hat, kunai)):
+            r.bag.first_fit(it)
+        self.assertFalse(can_infuse(bomb, hat)[0], "an active spirit needs an item that acts")
+        self.assertTrue(can_infuse(hat, katana)[0], "a passive spirit fits anything")
+        base_burn = katana.data.get("burn", 0)
+        infuse(bomb, katana)
+        self.assertGreater(katana.data["burn"], base_burn)
+        self.assertFalse(can_infuse(kunai, katana)[0], "one spirit per item")
+        save.save_run(r)
+        back = save.load_run()
+        k2 = next(i for i in back.all_items() if i.id == "katana")
+        self.assertEqual(k2.infusion["src"], "fire_bomb")
+        self.assertEqual(k2.data["burn"], katana.data["burn"])
+        save.clear_run()
+        b = make_battle(r, "kappa", 1.0, seed=1)
+        kat = next(ci for ci in b.f[0].items if ci.st["id"] == "katana")
+        self.assertTrue(kat.st.get("burn"), "the infusion is real in battle")
+
+    def test_tsukumogami_awakens_by_use(self):
+        from roguegame import spirit
+        r = RunState("samurai", 7)
+        for _ in range(spirit.AWAKEN_BATTLES):
+            b = make_battle(r, "kappa", 1.0, seed=2)
+            b.run_to_end()
+            awoke = r.record_battle(b.f[0].items)
+        self.assertTrue(awoke, "every kit item awakens after the set number of battles")
+        katana = next(i for i in r.bag.items if i.id == "katana")
+        self.assertIn(katana.awakened, ("blade", "storm"))
+        self.assertNotEqual(katana.data["name"], data.ITEMS["katana"]["name"])
+        armor = next(i for i in r.bag.items if i.id == "do_armor")
+        self.assertEqual(armor.awakened, "kami" if not data.ITEMS["do_armor"].get("cd") else armor.awakened)
+        d = ItemInst.from_dict(katana.to_dict())
+        self.assertEqual((d.awakened, d.battles), (katana.awakened, katana.battles))
+
+    def test_merging_keeps_spirits(self):
+        from roguegame.spirit import infuse
+        r = RunState("samurai", 8)
+        a, b, src = ItemInst("katana"), ItemInst("katana"), ItemInst("fire_bomb")
+        infuse(src, b)
+        b.awakened = "blade"
+        r.bag.items, r.stash.items = [], []
+        r.bag.first_fit(a)
+        r.bag.first_fit(b)
+        self.assertTrue(r.merge(a, b))
+        self.assertEqual((a.level, a.infusion["src"], a.awakened), (2, "fire_bomb", "blade"))
+
+    def test_crit_stun(self):
+        r = RunState("samurai", 9)
+        r.bag.items = []
+        k = ItemInst("katana")
+        k.awakened = "storm"
+        k.refresh()
+        r.bag.first_fit(k)
+        b = make_battle(r, "kurogane", 1.0, seed=3)
+        for f in b.f:
+            f.hp = f.max_hp = 10 ** 6
+        b.f[0].crit = 1.0
+        b.advance(10)
+        kat = next(ci for ci in b.f[0].items if ci.st["id"] == "katana")
+        self.assertGreater(kat.stats.get("stun", 0), 0, "a Lightning tsukumogami's crits stun")
+
+    def test_forge_event_and_bots(self):
+        from roguegame.events import EVENT_BY_ID, resolve, auto_infuse
+        r = RunState("kunoichi", 10)
+        res = resolve(r, EVENT_BY_ID["soul_forge"], 0)
+        self.assertEqual(res["forge"][0], "gold")
+        r.add_item("fire_bomb") if False else r.add_item("oil_flask")
+        got = auto_infuse(r, r.rng)
+        self.assertIsNotNone(got)
+
+
 class TestScreens(unittest.TestCase):
     def test_every_screen_draws(self):
         import pygame

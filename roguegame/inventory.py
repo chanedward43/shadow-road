@@ -26,12 +26,24 @@ class ItemInst:
         self.x = 0
         self.y = 0
         self._cache = None
+        self.infusion = None     # Soul Forge: dict(src=item id, stats={...}) - see spirit.py
+        self.battles = 0         # battles fought in the kit (tsukumogami)
+        self.usage = {}          # what it did in those battles: dmg, crits, block, heal, ...
+        self.awakened = None     # tsukumogami type once awakened
+
+    def refresh(self):
+        self._cache = None
 
     @property
     def data(self):
-        """Stats at this copy's level (level 1 = the base item)."""
-        if self._cache is None or self._cache[0] != self.level:
-            self._cache = (self.level, level_stats(ITEMS[self.id], self.level))
+        """Stats at this copy's level (level 1 = the base item), plus its infusion and awakening."""
+        key = (self.level, bool(self.infusion), self.awakened)
+        if self._cache is None or self._cache[0] != key:
+            st = level_stats(ITEMS[self.id], self.level)
+            if self.infusion or self.awakened:
+                from .spirit import overlay
+                st = overlay(self, st)
+            self._cache = (key, st)
         return self._cache[1]
 
     @property
@@ -46,7 +58,29 @@ class ItemInst:
         return self.cells_at(self.x, self.y)
 
     def to_dict(self):
-        return dict(id=self.id, rot=self.rot, x=self.x, y=self.y, level=self.level)
+        d = dict(id=self.id, rot=self.rot, x=self.x, y=self.y, level=self.level)
+        if self.infusion:
+            d["inf"] = self.infusion
+        if self.battles:
+            d["bt"] = self.battles
+            d["use"] = self.usage
+        if self.awakened:
+            d["aw"] = self.awakened
+        return d
+
+    @classmethod
+    def from_dict(cls, it):
+        """Rebuild a saved item (unknown spirit data from other versions is ignored safely)."""
+        inst = cls(it["id"], rot=int(it.get("rot", 0)) % 4, level=int(it.get("level", 1)))
+        inf = it.get("inf")
+        if isinstance(inf, dict) and inf.get("src") in ITEMS and isinstance(inf.get("stats"), dict):
+            stats = {k: (tuple(v) if isinstance(v, list) else v) for k, v in inf["stats"].items()}
+            inst.infusion = dict(src=inf["src"], stats=stats)
+        inst.battles = int(it.get("bt", 0))
+        inst.usage = dict(it.get("use") or {})
+        from .spirit import AWAKENINGS
+        inst.awakened = it.get("aw") if it.get("aw") in AWAKENINGS else None
+        return inst
 
 
 class Grid:

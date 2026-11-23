@@ -26,6 +26,8 @@ ACHIEVEMENTS = [
     ("arena_flawless", "Perfect Champion", "Become Arena champion without losing a heart."),
     ("slayer", "Demon Slayer", "Defeat 200 enemies in total."),
     ("omens", "Fate's Threads", "See a story thread through to its Omen."),
+    ("tsukumogami", "A Hundred Years", "Awaken an item into a tsukumogami."),
+    ("soul_forge", "Soul Smith", "Bind an item's spirit into another at a Kami Forge."),
 ]
 ACH_BY_ID = {a[0]: a for a in ACHIEVEMENTS}
 

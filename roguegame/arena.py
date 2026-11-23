@@ -118,7 +118,8 @@ def ghost_run(rec):
         d = ITEMS.get(it.get("id"))
         if d is None or d.get("enemy"):
             continue
-        inst = ItemInst(it["id"], rot=int(it.get("rot", 0)) % 4, level=max(1, min(3, int(it.get("level", 1)))))
+        it = dict(it, level=max(1, min(5, int(it.get("level", 1)))))
+        inst = ItemInst.from_dict(it)
         if g.can_place(inst, int(it["x"]), int(it["y"])):
             g.place(inst, int(it["x"]), int(it["y"]))
     run.bag = g
@@ -235,7 +236,8 @@ def gen_floor(run):
     rng = run.rng
     # every floor gets its own flavour: some lean on fights, some on treasure and events
     weights = dict(fight=rng.randint(3, 6), elite=rng.randint(1, 3), treasure=rng.randint(1, 3),
-                   event=rng.randint(1, 3), forge=1, bounty=1, dojo=1, shop=rng.randint(0, 1))
+                   event=rng.randint(1, 3), forge=1, bounty=1, dojo=1, shop=rng.randint(0, 1),
+                   soul=rng.choice((0, 0, 1)))
     kinds_all, w = zip(*weights.items())
     rows = []
     for r in range(FLOOR_ROWS):

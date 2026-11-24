@@ -64,6 +64,8 @@ def build(serve=False):
     subprocess.run(cmd, check=True)
     out = os.path.join(STAGE, "build", "web")
     publish_music(out)
+    # pygbag writes its own default favicon (the pygame snake) into the page folder: put ours back on top
+    shutil.copy(os.path.join(ROOT, "assets", "icon_256.png"), os.path.join(out, "favicon.png"))
     print(f"Web build ready: {out}")
     return out
 
